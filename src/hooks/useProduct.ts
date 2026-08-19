@@ -9,7 +9,11 @@ const BRAND_SELECT = `
   brand:brands ( id, name, slug ),
   company:companies ( id, name, slug ),`;
 
-const buildSelect = (withBrand: boolean, withModel: boolean) => `
+const buildSelect = (
+  withBrand: boolean,
+  withModel: boolean,
+  withMeta: boolean
+) => `
   id, name, slug, sku, kind, description, short_description,
   price_cents, sale_price_cents, price_max_cents,
   in_stock, featured, published, created_at,
@@ -27,7 +31,12 @@ const buildSelect = (withBrand: boolean, withModel: boolean) => `
   ),
   variations (
     id, sku, price_cents, sale_price_cents, in_stock, position,
-    variation_terms ( attribute_id, term_id )
+    variation_terms ( attribute_id, term_id )${
+      withMeta
+        ? `,
+    variation_meta ( name, value, position )`
+        : ""
+    }
   )
 `;
 
@@ -60,6 +69,7 @@ function normalise(row: any): ProductDetail {
       in_stock: v.in_stock,
       position: v.position,
       terms: v.variation_terms ?? [],
+      meta: [...(v.variation_meta ?? [])].sort(byPosition),
     })),
   };
 }
@@ -77,25 +87,30 @@ export function useProduct(slug: string | undefined) {
     // Prefer the full query; progressively drop the brand/company relations
     // (need 0005/0007) and the model_3d_url column (needs 0008) until it works,
     // so a not-yet-run migration never breaks the whole product page.
-    const attempts: [boolean, boolean][] = [
-      [true, true],
-      [true, false],
-      [false, true],
-      [false, false],
+    const attempts: [boolean, boolean, boolean][] = [
+      [true, true, true],
+      [true, true, false],
+      [true, false, false],
+      [false, true, false],
+      [false, false, false],
     ];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let data: any = null;
     let error: { message: string } | null = null;
-    for (const [withBrand, withModel] of attempts) {
+    for (const [withBrand, withModel, withMeta] of attempts) {
       const res = await supabase
         .from("products")
-        .select(buildSelect(withBrand, withModel))
+        .select(buildSelect(withBrand, withModel, withMeta))
         .eq("slug", slug)
         .maybeSingle();
       data = res.data;
       error = res.error;
       // Stop once it succeeds, or on an error that isn't about these columns.
-      if (!error || !/brand|compan|model_3d/i.test(error.message)) break;
+      if (
+        !error ||
+        !/brand|compan|model_3d|variation_meta/i.test(error.message)
+      )
+        break;
     }
 
     if (error) {

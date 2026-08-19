@@ -1,6 +1,15 @@
 import { supabase } from "./supabase";
 import type { ProductAttribute } from "../types/catalogue";
 
+/**
+ * One free-typed extra attribute on a variation (e.g. Material) with its
+ * values (Oak, Teak). Descriptive only — doesn't define the variation.
+ */
+export type VariationMetaDraft = {
+  name: string;
+  values: string[];
+};
+
 /** A variation as the editor holds it, before it is saved. */
 export type VariationDraft = {
   /** Existing row id, or null for one not yet saved. */
@@ -13,6 +22,8 @@ export type VariationDraft = {
   in_stock: boolean;
   image_url: string;
   position: number;
+  /** Free-typed extra attributes on this variation. */
+  meta: VariationMetaDraft[];
 };
 
 /** Stable key for a combination, so duplicates are easy to spot. */
@@ -148,6 +159,33 @@ export async function saveVariations(
   if (imageRows.length > 0) {
     const { error } = await supabase.from("product_images").insert(imageRows);
     if (error) return { error: error.message };
+  }
+
+  // Per-variation extra attributes → variation_meta (one row per value).
+  // Deleting the variations above already cascade-removed their old meta rows.
+  const metaRows = drafts.flatMap((d, position) => {
+    const id = idByPosition.get(position);
+    if (!id) return [];
+    return (d.meta ?? []).flatMap((m) => {
+      const name = m.name.trim();
+      if (!name) return [];
+      return m.values
+        .map((v) => v.trim())
+        .filter(Boolean)
+        .map((value, vPos) => ({
+          variation_id: id,
+          name,
+          value,
+          position: vPos,
+        }));
+    });
+  });
+
+  if (metaRows.length > 0) {
+    const { error } = await supabase.from("variation_meta").insert(metaRows);
+    // Tolerate the table not existing yet (before 0009) so saving still works.
+    if (error && !/variation_meta/i.test(error.message))
+      return { error: error.message };
   }
 
   return { error: null };

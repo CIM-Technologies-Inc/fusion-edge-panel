@@ -261,6 +261,24 @@ export default function ProductDetail() {
                 </dd>
               </div>
             )}
+            {/* Extra attributes on the chosen variation (Material, etc.). */}
+            {variation &&
+              Object.entries(
+                (variation.meta ?? []).reduce<Record<string, string[]>>(
+                  (acc, m) => {
+                    (acc[m.name] ??= []).push(m.value);
+                    return acc;
+                  },
+                  {}
+                )
+              ).map(([name, values]) => (
+                <div key={name} className="flex justify-between gap-4">
+                  <dt className="text-gray-500 dark:text-gray-400">{name}</dt>
+                  <dd className="text-right text-gray-800 dark:text-white/90">
+                    {values.join(", ")}
+                  </dd>
+                </div>
+              ))}
           </dl>
 
           {specs.length > 0 && (

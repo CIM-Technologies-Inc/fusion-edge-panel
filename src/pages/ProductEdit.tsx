@@ -122,19 +122,29 @@ export default function ProductEditPage() {
 
     // Seed variation drafts, pairing each with its own image if it has one.
     setVariations(
-      product.variations.map((v, position) => ({
-        id: v.id,
-        terms: Object.fromEntries(
-          v.terms.map((t) => [t.attribute_id, t.term_id])
-        ),
-        price: centsToInput(v.price_cents),
-        sale_price: centsToInput(v.sale_price_cents),
-        sku: v.sku ?? "",
-        in_stock: v.in_stock,
-        image_url:
-          product.images.find((i) => i.variation_id === v.id)?.url ?? "",
-        position,
-      }))
+      product.variations.map((v, position) => {
+        // Group flat meta rows (name, value) into { name, values[] }.
+        const byName = new Map<string, string[]>();
+        for (const m of v.meta ?? []) {
+          const arr = byName.get(m.name) ?? [];
+          arr.push(m.value);
+          byName.set(m.name, arr);
+        }
+        return {
+          id: v.id,
+          terms: Object.fromEntries(
+            v.terms.map((t) => [t.attribute_id, t.term_id])
+          ),
+          price: centsToInput(v.price_cents),
+          sale_price: centsToInput(v.sale_price_cents),
+          sku: v.sku ?? "",
+          in_stock: v.in_stock,
+          image_url:
+            product.images.find((i) => i.variation_id === v.id)?.url ?? "",
+          position,
+          meta: [...byName.entries()].map(([name, values]) => ({ name, values })),
+        };
+      })
     );
   }, [product]);
 

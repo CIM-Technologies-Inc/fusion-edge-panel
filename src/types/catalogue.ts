@@ -100,6 +100,13 @@ export type ProductAttribute = {
   default_term_id?: string | null;
 };
 
+/** One free-typed extra attribute value on a variation (Material = Oak). */
+export type VariationMeta = {
+  name: string;
+  value: string;
+  position: number;
+};
+
 /** One buyable combination. `terms` is one entry per attribute. */
 export type Variation = {
   id: string;
@@ -109,6 +116,8 @@ export type Variation = {
   in_stock: boolean;
   position: number;
   terms: { attribute_id: string; term_id: string }[];
+  /** Free-typed extra attributes attached to this variation. */
+  meta: VariationMeta[];
 };
 
 export type Product = {

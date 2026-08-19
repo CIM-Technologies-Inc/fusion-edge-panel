@@ -6,6 +6,7 @@ import {
   allCombinations,
   comboKey,
   type VariationDraft,
+  type VariationMetaDraft,
 } from "../../lib/variationsAdmin";
 import type { ProductAttribute } from "../../types/catalogue";
 
@@ -45,6 +46,47 @@ export default function VariationBuilder({
   const remove = (i: number) =>
     onChange(value.filter((_, idx) => idx !== i));
 
+  // --- Extra (free-typed) attributes per variation -------------------------
+  // Draft text for the "add a value" box, keyed `${variationIndex}:${metaIndex}`.
+  const [valueDraft, setValueDraft] = useState<Record<string, string>>({});
+
+  const setMeta = (i: number, meta: VariationMetaDraft[]) => patch(i, { meta });
+
+  const addMetaAttr = (i: number) =>
+    setMeta(i, [...(value[i].meta ?? []), { name: "", values: [] }]);
+
+  const removeMetaAttr = (i: number, mi: number) =>
+    setMeta(i, value[i].meta.filter((_, idx) => idx !== mi));
+
+  const renameMetaAttr = (i: number, mi: number, name: string) =>
+    setMeta(i, value[i].meta.map((m, idx) => (idx === mi ? { ...m, name } : m)));
+
+  const addMetaValue = (i: number, mi: number) => {
+    const key = `${i}:${mi}`;
+    const v = (valueDraft[key] ?? "").trim();
+    if (!v) return;
+    const m = value[i].meta[mi];
+    if (m.values.includes(v)) {
+      setValueDraft((d) => ({ ...d, [key]: "" }));
+      return;
+    }
+    setMeta(
+      i,
+      value[i].meta.map((x, idx) =>
+        idx === mi ? { ...x, values: [...x.values, v] } : x
+      )
+    );
+    setValueDraft((d) => ({ ...d, [key]: "" }));
+  };
+
+  const removeMetaValue = (i: number, mi: number, v: string) =>
+    setMeta(
+      i,
+      value[i].meta.map((x, idx) =>
+        idx === mi ? { ...x, values: x.values.filter((y) => y !== v) } : x
+      )
+    );
+
   /** Add every combination that isn't already present. */
   const generateAll = () => {
     const combos = allCombinations(attributes);
@@ -68,6 +110,7 @@ export default function VariationBuilder({
         in_stock: true,
         image_url: "",
         position: value.length + n,
+        meta: [],
       }));
 
     if (added.length === 0) {
@@ -99,6 +142,7 @@ export default function VariationBuilder({
         in_stock: true,
         image_url: "",
         position: value.length,
+        meta: [],
       },
     ]);
   };
@@ -284,6 +328,108 @@ export default function VariationBuilder({
                     </button>
                   )}
                 </div>
+              </div>
+
+              {/* Extra attributes — free-typed name + values, this variation only. */}
+              <div className="pt-3 mt-4 border-t border-gray-100 dark:border-gray-800">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-theme-xs font-medium text-gray-600 dark:text-gray-300">
+                    Extra attributes
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => addMetaAttr(i)}
+                    className="text-sm font-medium text-brand-500 hover:text-brand-600"
+                  >
+                    + Add attribute
+                  </button>
+                </div>
+
+                {(d.meta ?? []).length === 0 ? (
+                  <p className="text-theme-xs text-gray-400">
+                    Optional. Add attributes like Material or Application, each
+                    with one or more values.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {d.meta.map((m, mi) => {
+                      const key = `${i}:${mi}`;
+                      return (
+                        <div
+                          key={mi}
+                          className="p-3 border border-gray-200 rounded-lg dark:border-gray-700"
+                        >
+                          <div className="flex gap-2">
+                            <Input
+                              value={m.name}
+                              placeholder="Attribute name (e.g. Material)"
+                              onChange={(e) =>
+                                renameMetaAttr(i, mi, e.target.value)
+                              }
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeMetaAttr(i, mi)}
+                              aria-label="Remove attribute"
+                              className="h-10 shrink-0 rounded-lg border border-gray-300 px-3 text-sm text-gray-500 hover:border-error-500 hover:text-error-500 dark:border-gray-700 dark:text-gray-400"
+                            >
+                              ×
+                            </button>
+                          </div>
+
+                          {/* Value chips */}
+                          {m.values.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-2">
+                              {m.values.map((v) => (
+                                <span
+                                  key={v}
+                                  className="inline-flex items-center h-7 gap-1.5 rounded-full border border-gray-300 pl-3 pr-1.5 text-sm text-gray-700 dark:border-gray-700 dark:text-gray-300"
+                                >
+                                  {v}
+                                  <button
+                                    type="button"
+                                    onClick={() => removeMetaValue(i, mi, v)}
+                                    aria-label={`Remove ${v}`}
+                                    className="flex items-center justify-center w-4 h-4 text-gray-400 rounded-full hover:text-error-500"
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Add a value */}
+                          <div className="flex gap-2 mt-2">
+                            <Input
+                              value={valueDraft[key] ?? ""}
+                              placeholder="Add a value (e.g. Oak), press Add"
+                              onChange={(e) =>
+                                setValueDraft((dd) => ({
+                                  ...dd,
+                                  [key]: e.target.value,
+                                }))
+                              }
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  addMetaValue(i, mi);
+                                }
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => addMetaValue(i, mi)}
+                              className={btn}
+                            >
+                              Add
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           ))}
