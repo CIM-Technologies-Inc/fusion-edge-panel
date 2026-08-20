@@ -1,0 +1,52 @@
+{
+  "$comment": "Required attributes per product category. When a product's category matches a key here, the product form should require these attributes to be present. Match by category slug (case-insensitive). 'attributes' lists the attribute names (slugs) that must be filled in. Extend by adding more category entries.",
+  "version": 1,
+  "categories": {
+    "tiles": {
+      "label": "Tiles",
+      "attributes": [
+        {
+          "name": "data-cim-url",
+          "label": "Tile image URL",
+          "type": "url",
+          "required": true
+        },
+        {
+          "name": "data-cim-tile-h",
+          "label": "Tile height",
+          "type": "number",
+          "required": true
+        },
+        {
+          "name": "data-cim-tile-w",
+          "label": "Tile width",
+          "type": "number",
+          "required": true
+        },
+        {
+          "name": "data-cim-kind",
+          "label": "Kind",
+          "type": "text",
+          "required": true
+        }
+      ]
+    },
+    "paint": {
+      "label": "Paint",
+      "attributes": [
+        {
+          "name": "data-cim-color-code",
+          "label": "Color code",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "data-cim-kind",
+          "label": "Kind",
+          "type": "text",
+          "required": true
+        }
+      ]
+    }
+  }
+}

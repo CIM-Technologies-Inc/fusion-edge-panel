@@ -133,6 +133,59 @@ Work completed today, grouped for ClickUp. Each item notes whether it needs a
   `@google/model-viewer`.
 - ⚠️ **Action required:** run `0008_product_model3d.sql`.
 
+## 11. Dashboard rebuilt for the catalogue
+- Replaced the demo sales/orders dashboard with a real catalogue overview:
+  stat cards (products, variations, categories/brands/companies, users),
+  charts (products added per month, products by category), a Recent products
+  table, and a Needs-attention list (unpublished / missing image).
+- Files: `src/components/dashboard/CatalogueDashboard.tsx`,
+  `src/hooks/useDashboardStats.ts`, `src/pages/Dashboard/Home.tsx`.
+- No migration needed.
+
+## 12. Branding — dark logo, dark mode default, sign-in video
+- Dark-mode logo (`log-fusion-dark.png`) now swaps in for the sidebar,
+  header, and sign-in page in dark mode.
+- Dark mode is the default (with a no-flash pre-paint init); users can still
+  toggle and their choice is remembered.
+- Sign-in page's right half is now a background video with the logo overlaid.
+- Files: `src/layout/AppSidebar.tsx`, `src/layout/AppHeader.tsx`,
+  `src/context/ThemeContext.tsx`, `index.html`,
+  `src/pages/AuthPages/AuthPageLayout.tsx`.
+- No migration needed.
+
+## 13. Per-variation extra attributes
+- Each variation can now carry free-typed extra attributes (e.g. Material,
+  Dimension), each with multiple values — added on the variation form as
+  add-attribute / add-value chips. Fully dynamic (any number of attributes).
+- Shown as specs on the public product page for the selected variation.
+- New `variation_meta` table stores them; loading degrades gracefully if the
+  migration hasn't run.
+- Files: `supabase/migrations/0009_variation_meta.sql`,
+  `src/components/product/VariationBuilder.tsx`, `src/lib/variationsAdmin.ts`,
+  `src/hooks/useProduct.ts`, `src/pages/ProductEdit.tsx`,
+  `src/pages/ProductDetail.tsx`, `src/types/catalogue.ts`,
+  `src/components/form/input/InputField.tsx`.
+- ⚠️ **Action required:** run `0009_variation_meta.sql`.
+
+## 14. Fix — variations showing no value in the editor
+- Some variations rendered blank because their `variation_terms` referenced an
+  attribute the product no longer offers (leftover WordPress `data-cim-*` junk,
+  e.g. `data-cim-hex`). The editor only renders offered attributes, so those
+  looked empty.
+- SQL fix removes only the orphaned variation-terms (never a real selection);
+  variation rows, prices, images, and extra attributes are untouched.
+- Currently affects 1 product; script is safe to run across all.
+- Files: `supabase/fix_orphaned_variation_terms.sql`
+  (and product-specific `supabase/fix_basel_tile_variations.sql`).
+- ⚠️ **Action required:** run `fix_orphaned_variation_terms.sql`.
+
+## 15. Data reset tooling
+- Scripts to wipe dummy data safely (transaction-wrapped, with row-count
+  checks): full catalogue reset keeping logins, and a products-only reset that
+  keeps brands/companies/categories/attributes.
+- Files: `supabase/reset_catalogue_data.sql`,
+  `supabase/reset_products_only.sql`.
+
 ---
 
 ## Outstanding action items (checklist)
@@ -142,6 +195,8 @@ Work completed today, grouped for ClickUp. Each item notes whether it needs a
 - [ ] Run migration `0006_companies.sql` (adds companies + optional brand→company link)
 - [ ] Run migration `0007_brand_companies.sql` (company⇄brand many-to-many + company on products, backfills "Generic")
 - [ ] Run migration `0008_product_model3d.sql` (adds products.model_3d_url for the 3D viewer)
+- [ ] Run migration `0009_variation_meta.sql` (per-variation extra attributes)
+- [ ] Run `fix_orphaned_variation_terms.sql` (fixes variations showing no value)
 - [ ] Deploy Edge Function: `supabase functions deploy admin-users` + set `SERVICE_ROLE_KEY`
 - [ ] Run `cim_junk_blast_radius.sql` and decide on deleting the `data-*` junk attributes
 
