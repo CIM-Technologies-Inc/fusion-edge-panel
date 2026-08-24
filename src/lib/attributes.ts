@@ -142,6 +142,88 @@ export async function createTerm(
 }
 
 /**
+ * Turn category-required attributes (name + typed value) into attribute
+ * assignments for a product, reusing the global attribute system.
+ *
+ * For each filled value it: finds or creates the global attribute by slug,
+ * creates a PRODUCT-OWNED term holding the value (so it doesn't pollute the
+ * shared pool), and returns an AttributeAssignment. These are merged with the
+ * product's other assignments and written in one syncProductAttributes call.
+ */
+export async function resolveRequiredAssignments(
+  productId: string,
+  filled: { name: string; value: string }[]
+): Promise<{ assignments: AttributeAssignment[]; error: string | null }> {
+  // Existing attributes, matched by slug so we reuse rather than duplicate.
+  const { data: existing, error: exErr } = await supabase
+    .from("attributes")
+    .select("id, slug");
+  if (exErr) return { assignments: [], error: exErr.message };
+  const idBySlug = new Map(
+    (existing ?? []).map((a) => [a.slug as string, a.id as string])
+  );
+
+  const assignments: AttributeAssignment[] = [];
+
+  for (const f of filled) {
+    const value = f.value.trim();
+    if (!value) continue;
+    const slug = slugify(f.name);
+
+    // Find or create the attribute.
+    let attributeId = idBySlug.get(slug);
+    if (!attributeId) {
+      const { data, error } = await createAttribute(f.name, "select");
+      if (error || !data)
+        return { assignments: [], error: error ?? "Attribute create failed." };
+      attributeId = data.id;
+      idBySlug.set(slug, attributeId);
+    }
+
+    // Find-or-create the product-owned term. Re-saving with the same value must
+    // reuse the existing term, not create a duplicate — the partial unique
+    // index (attribute_id, product_id, slug) would otherwise reject it.
+    const valueSlug = slugify(value);
+    let termId: string | null = null;
+
+    const { data: existingTerm } = await supabase
+      .from("attribute_terms")
+      .select("id")
+      .eq("attribute_id", attributeId)
+      .eq("product_id", productId)
+      .eq("slug", valueSlug)
+      .maybeSingle();
+
+    if (existingTerm) {
+      // Reuse; also refresh its display name in case only casing changed.
+      termId = existingTerm.id as string;
+      await supabase
+        .from("attribute_terms")
+        .update({ name: value })
+        .eq("id", termId);
+    } else {
+      const { data: term, error: termErr } = await createTerm(
+        attributeId,
+        value,
+        null,
+        productId
+      );
+      if (termErr || !term)
+        return { assignments: [], error: termErr ?? "Value create failed." };
+      termId = term.id;
+    }
+
+    assignments.push({
+      attribute_id: attributeId,
+      used_for_variations: false,
+      term_ids: [termId],
+    });
+  }
+
+  return { assignments, error: null };
+}
+
+/**
  * Replace a product's attribute assignments with the given set.
  *
  * The join tables have no clean upsert key for our shape, so we delete the

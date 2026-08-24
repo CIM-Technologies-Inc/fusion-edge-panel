@@ -27,9 +27,11 @@ import {
 } from "../lib/products";
 import {
   createTerm,
+  resolveRequiredAssignments,
   syncProductAttributes,
   type AttributeAssignment,
 } from "../lib/attributes";
+import { getRequiredAttributes } from "../lib/requiredAttributes";
 import type { AttributeWithTerms, ProductKind } from "../types/catalogue";
 
 const shell =
@@ -82,6 +84,23 @@ export default function ProductNew() {
   const [brandId, setBrandId] = useState("");
   // Brands available for the chosen company (the picker filters by company).
   const companyBrands = companyId ? brandsByCompany.get(companyId) ?? [] : [];
+
+  // Category-required attributes (from requiredAttributes.json), matched by the
+  // selected category's slug. Auto-shown as fields; their typed values.
+  const categorySlug =
+    categories.find((c) => c.id === categoryId)?.slug ?? null;
+  const requiredAttrs = getRequiredAttributes(categorySlug);
+  // Config attributes are managed only in the required card — keep them out of
+  // the regular Attributes list so they don't appear twice. Matched by slug.
+  const requiredSlugSet = new Set(requiredAttrs.map((ra) => slugify(ra.name)));
+  const builderPool = poolWithPending.filter(
+    (a) => !requiredSlugSet.has(a.slug)
+  );
+  // name -> typed value, and name -> error message
+  const [reqValues, setReqValues] = useState<Record<string, string>>({});
+  const [reqErrors, setReqErrors] = useState<Record<string, string>>({});
+  // Which required-image field the media picker is filling, or null.
+  const [reqPicker, setReqPicker] = useState<string | null>(null);
   const [shortDesc, setShortDesc] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
@@ -228,6 +247,22 @@ export default function ProductNew() {
       return;
     }
 
+    // Category-required attributes must be filled in.
+    const reqErr: Record<string, string> = {};
+    for (const ra of requiredAttrs) {
+      if (ra.required && !(reqValues[ra.name] ?? ra.default ?? "").trim())
+        reqErr[ra.name] = `${ra.label} is required.`;
+    }
+    setReqErrors(reqErr);
+    if (Object.keys(reqErr).length > 0) {
+      notify(
+        "error",
+        "Required fields missing",
+        "Fill in the required attributes for this category."
+      );
+      return;
+    }
+
     // An attribute with no values would be silently dropped on save — block it.
     const emptyAttr = assignments.find((a) => a.term_ids.length === 0);
     if (emptyAttr) {
@@ -297,11 +332,31 @@ export default function ProductNew() {
       default_term_id: a.default_term_id ? resolveId(a.default_term_id) : a.default_term_id,
     }));
 
+    // Category-required attributes: create/find the attribute + a product-owned
+    // term for each typed value, and merge them in as (spec) assignments.
+    let requiredAssignments: AttributeAssignment[] = [];
+    if (requiredAttrs.length > 0) {
+      const filled = requiredAttrs.map((ra) => ({
+        name: ra.name,
+        value: reqValues[ra.name] ?? ra.default ?? "",
+      }));
+      const res = await resolveRequiredAssignments(id, filled);
+      if (res.error) {
+        setSaving(false);
+        notify("error", "Product saved, required attrs failed", res.error);
+        navigate(`/product/${newSlug}`);
+        return;
+      }
+      requiredAssignments = res.assignments;
+    }
+
     // A simple product can never carry variation attributes — force specs.
-    const safeAssignments =
-      kind === "variable"
+    const safeAssignments = [
+      ...(kind === "variable"
         ? resolved
-        : resolved.map((a) => ({ ...a, used_for_variations: false }));
+        : resolved.map((a) => ({ ...a, used_for_variations: false }))),
+      ...requiredAssignments, // always specs
+    ];
 
     if (safeAssignments.length > 0) {
       const { error: attrErr } = await syncProductAttributes(
@@ -535,10 +590,98 @@ export default function ProductNew() {
 
         </div>
 
+        {/* Required attributes for this category (from requiredAttributes.json). */}
+        {requiredAttrs.length > 0 && (
+          <div className={`${shell} space-y-4`}>
+            <div>
+              <h3 className="font-medium text-gray-800 dark:text-white/90">
+                Required for this category
+              </h3>
+              <p className="text-theme-xs text-gray-400">
+                These fields are required for{" "}
+                {categories.find((c) => c.id === categoryId)?.name}.
+              </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {requiredAttrs.map((ra) => {
+                const val = reqValues[ra.name] ?? ra.default ?? "";
+                const setVal = (next: string) => {
+                  setReqValues((v) => ({ ...v, [ra.name]: next }));
+                  setReqErrors((er) => {
+                    const { [ra.name]: _drop, ...rest } = er;
+                    return rest;
+                  });
+                };
+                return (
+                  <div key={ra.name}>
+                    <Label>
+                      {ra.label}{" "}
+                      {ra.required && <span className="text-error-500">*</span>}
+                    </Label>
+                    {ra.type === "color" ? (
+                      <div className="flex gap-2">
+                        <input
+                          type="color"
+                          aria-label={`${ra.label} color`}
+                          value={/^#[0-9a-fA-F]{6}$/.test(val) ? val : "#000000"}
+                          onChange={(e) => setVal(e.target.value)}
+                          className="h-11 w-12 shrink-0 cursor-pointer rounded-lg border border-gray-300 bg-transparent dark:border-gray-700"
+                        />
+                        <Input
+                          value={val}
+                          placeholder="#000000"
+                          error={!!reqErrors[ra.name]}
+                          hint={reqErrors[ra.name]}
+                          onChange={(e) => setVal(e.target.value)}
+                        />
+                      </div>
+                    ) : ra.type === "image" ? (
+                      <div className="flex items-start gap-2">
+                        <div className="w-11 h-11 overflow-hidden border border-gray-200 rounded-lg shrink-0 bg-gray-50 dark:border-gray-700 dark:bg-white/[0.03]">
+                          {val.trim() && (
+                            <img
+                              src={val}
+                              alt=""
+                              className="object-cover w-full h-full"
+                            />
+                          )}
+                        </div>
+                        <Input
+                          value={val}
+                          placeholder="Image URL (https://…)"
+                          error={!!reqErrors[ra.name]}
+                          hint={reqErrors[ra.name]}
+                          onChange={(e) => setVal(e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setReqPicker(ra.name)}
+                          className="h-11 shrink-0 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+                        >
+                          Choose
+                        </button>
+                      </div>
+                    ) : (
+                      <Input
+                        type={ra.type === "number" ? "number" : "text"}
+                        value={val}
+                        placeholder={ra.type === "url" ? "https://…" : ""}
+                        error={!!reqErrors[ra.name]}
+                        hint={reqErrors[ra.name]}
+                        onChange={(e) => setVal(e.target.value)}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Attributes get their own card, separate from the product details. */}
         <div className={shell}>
           <AttributeBuilder
-            pool={poolWithPending}
+            pool={builderPool}
             value={assignments}
             onChange={setAssignments}
             onPoolChange={reloadAttributes}
@@ -593,6 +736,20 @@ export default function ProductNew() {
               }}
             />
           </div>
+
+          {/* Media picker for required image-type attribute fields. */}
+          <MediaPicker
+            isOpen={reqPicker !== null}
+            onClose={() => setReqPicker(null)}
+            onPick={(url) => {
+              if (reqPicker === null) return;
+              setReqValues((v) => ({ ...v, [reqPicker]: url }));
+              setReqErrors((er) => {
+                const { [reqPicker]: _drop, ...rest } = er;
+                return rest;
+              });
+            }}
+          />
 
           <div className={shell}>
             <Model3DField value={model3d} onChange={setModel3d} notify={notify} />

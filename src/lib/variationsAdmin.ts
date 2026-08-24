@@ -136,11 +136,15 @@ export async function saveVariations(
   const termRows = drafts.flatMap((d, position) => {
     const id = idByPosition.get(position);
     if (!id) return [];
-    return Object.entries(d.terms).map(([attribute_id, term_id]) => ({
-      variation_id: id,
-      attribute_id,
-      term_id,
-    }));
+    return Object.entries(d.terms)
+      // Skip attributes with no value chosen — inserting an empty term_id
+      // (not a valid UUID) would fail the FK/uuid check.
+      .filter(([attribute_id, term_id]) => attribute_id && term_id)
+      .map(([attribute_id, term_id]) => ({
+        variation_id: id,
+        attribute_id,
+        term_id,
+      }));
   });
 
   if (termRows.length > 0) {

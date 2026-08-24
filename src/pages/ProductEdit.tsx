@@ -33,9 +33,12 @@ import { useCategories } from "../hooks/useCategories";
 import { useCompanyBrands } from "../hooks/useCompanyBrands";
 import MediaPicker from "../components/media/MediaPicker";
 import {
+  resolveRequiredAssignments,
   syncProductAttributes,
   type AttributeAssignment,
 } from "../lib/attributes";
+import { getRequiredAttributes } from "../lib/requiredAttributes";
+import { slugify } from "../lib/products";
 
 const shell =
   "rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/[0.03]";
@@ -72,6 +75,11 @@ export default function ProductEditPage() {
 
   const [form, setForm] = useState<FormState | null>(null);
   const [assignments, setAssignments] = useState<AttributeAssignment[]>([]);
+  // Category-required attribute values (slug -> value) and their errors.
+  const [reqValues, setReqValues] = useState<Record<string, string>>({});
+  const [reqErrors, setReqErrors] = useState<Record<string, string>>({});
+  // Which required-image field the media picker is filling (its slug), or null.
+  const [reqPicker, setReqPicker] = useState<string | null>(null);
   const [images, setImages] = useState<string[]>([""]);
   const [variations, setVariations] = useState<VariationDraft[]>([]);
   const [dataTab, setDataTab] = useState<"attributes" | "variations">(
@@ -113,6 +121,15 @@ export default function ProductEditPage() {
         default_term_id: pa.default_term_id ?? null,
       }))
     );
+    // Pre-fill category-required fields from existing attribute term values
+    // (matched by the attribute's slug; first term value wins).
+    const bySlug: Record<string, string> = {};
+    for (const pa of product.attributes) {
+      const v = pa.terms[0]?.name;
+      if (v) bySlug[pa.attribute.slug] = v;
+    }
+    setReqValues(bySlug);
+    setReqErrors({});
     // Only the product-level images are editable here; variation galleries
     // are managed with their variation.
     const own = product.images
@@ -178,6 +195,28 @@ export default function ProductEditPage() {
   }
 
   const isVariable = product.kind === "variable";
+
+  // Category-required attributes for the currently selected category (by slug).
+  const categorySlug =
+    categories.find((c) => c.id === form.category_id)?.slug ?? null;
+  const requiredAttrs = getRequiredAttributes(categorySlug);
+  // Field values are keyed by the attribute slug so they line up with the
+  // product's stored attributes (which we pre-filled by slug on load).
+  const reqKey = (name: string) => slugify(name);
+
+  // The config attributes are managed only in the "Required for this category"
+  // card — hide them from the regular Attributes list so they don't appear
+  // twice. Matched by slug.
+  const requiredSlugSet = new Set(requiredAttrs.map((ra) => reqKey(ra.name)));
+  const requiredAttrIdSet = new Set(
+    attributes.filter((a) => requiredSlugSet.has(a.slug)).map((a) => a.id)
+  );
+  const builderPool = attributes.filter(
+    (a) => !requiredSlugSet.has(a.slug)
+  );
+  const builderAssignments = assignments.filter(
+    (a) => !requiredAttrIdSet.has(a.attribute_id)
+  );
 
   // Brands available for the chosen company (the Brand picker filters by it).
   const companyBrands = form.company_id
@@ -306,6 +345,22 @@ export default function ProductEditPage() {
       return;
     }
 
+    // Category-required attributes must be filled in.
+    const reqErr: Record<string, string> = {};
+    for (const ra of requiredAttrs) {
+      if (ra.required && !(reqValues[reqKey(ra.name)] ?? ra.default ?? "").trim())
+        reqErr[reqKey(ra.name)] = `${ra.label} is required.`;
+    }
+    setReqErrors(reqErr);
+    if (Object.keys(reqErr).length > 0) {
+      notify(
+        "error",
+        "Required fields missing",
+        "Fill in the required attributes for this category."
+      );
+      return;
+    }
+
     // An attribute with no values chosen can't be saved (it would be silently
     // dropped), so flag it by name instead of losing it on a "success" save.
     const emptyAttr = assignments.find((a) => a.term_ids.length === 0);
@@ -361,11 +416,43 @@ export default function ProductEditPage() {
       return;
     }
 
+    // Category-required attributes: drop the product's existing assignments for
+    // those config attributes (matched by slug), then re-resolve fresh from the
+    // field values so edits replace rather than duplicate them.
+    const reqSlugs = new Set(requiredAttrs.map((ra) => reqKey(ra.name)));
+    const reqAttrIds = new Set(
+      attributes
+        .filter((a) => reqSlugs.has(a.slug))
+        .map((a) => a.id)
+    );
+    const nonReqAssignments = assignments.filter(
+      (a) => !reqAttrIds.has(a.attribute_id)
+    );
+
+    let requiredAssignments: AttributeAssignment[] = [];
+    if (requiredAttrs.length > 0) {
+      const filled = requiredAttrs.map((ra) => ({
+        name: ra.name,
+        value: reqValues[reqKey(ra.name)] ?? ra.default ?? "",
+      }));
+      const res = await resolveRequiredAssignments(product.id, filled);
+      if (res.error) {
+        setSaving(false);
+        notify("error", "Saved, but required attrs failed", res.error);
+        navigate(`/product/${edit.slug}`);
+        return;
+      }
+      requiredAssignments = res.assignments;
+    }
+
     // Replace the product's attribute assignments with the current set.
     // Simple products never carry variation attributes — force specs.
-    const safeAssignments = isVariable
-      ? assignments
-      : assignments.map((a) => ({ ...a, used_for_variations: false }));
+    const safeAssignments = [
+      ...(isVariable
+        ? nonReqAssignments
+        : nonReqAssignments.map((a) => ({ ...a, used_for_variations: false }))),
+      ...requiredAssignments, // always specs
+    ];
     const { error: attrErr } = await syncProductAttributes(
       product.id,
       safeAssignments
@@ -576,6 +663,95 @@ export default function ProductEditPage() {
 
         </div>
 
+        {/* Required attributes for this category (from requiredAttributes.json). */}
+        {requiredAttrs.length > 0 && (
+          <div className={`${shell} space-y-4`}>
+            <div>
+              <h3 className="font-medium text-gray-800 dark:text-white/90">
+                Required for this category
+              </h3>
+              <p className="text-theme-xs text-gray-400">
+                These fields are required for{" "}
+                {categories.find((c) => c.id === form.category_id)?.name}.
+              </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {requiredAttrs.map((ra) => {
+                const key = reqKey(ra.name);
+                const val = reqValues[key] ?? ra.default ?? "";
+                const setVal = (next: string) => {
+                  setReqValues((v) => ({ ...v, [key]: next }));
+                  setReqErrors((er) => {
+                    const { [key]: _drop, ...rest } = er;
+                    return rest;
+                  });
+                };
+                return (
+                  <div key={ra.name}>
+                    <Label>
+                      {ra.label}{" "}
+                      {ra.required && <span className="text-error-500">*</span>}
+                    </Label>
+                    {ra.type === "color" ? (
+                      <div className="flex gap-2">
+                        <input
+                          type="color"
+                          aria-label={`${ra.label} color`}
+                          value={/^#[0-9a-fA-F]{6}$/.test(val) ? val : "#000000"}
+                          onChange={(e) => setVal(e.target.value)}
+                          className="h-11 w-12 shrink-0 cursor-pointer rounded-lg border border-gray-300 bg-transparent dark:border-gray-700"
+                        />
+                        <Input
+                          value={val}
+                          placeholder="#000000"
+                          error={!!reqErrors[key]}
+                          hint={reqErrors[key]}
+                          onChange={(e) => setVal(e.target.value)}
+                        />
+                      </div>
+                    ) : ra.type === "image" ? (
+                      <div className="flex items-start gap-2">
+                        <div className="w-11 h-11 overflow-hidden border border-gray-200 rounded-lg shrink-0 bg-gray-50 dark:border-gray-700 dark:bg-white/[0.03]">
+                          {val.trim() && (
+                            <img
+                              src={val}
+                              alt=""
+                              className="object-cover w-full h-full"
+                            />
+                          )}
+                        </div>
+                        <Input
+                          value={val}
+                          placeholder="Image URL (https://…)"
+                          error={!!reqErrors[key]}
+                          hint={reqErrors[key]}
+                          onChange={(e) => setVal(e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setReqPicker(key)}
+                          className="h-11 shrink-0 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+                        >
+                          Choose
+                        </button>
+                      </div>
+                    ) : (
+                      <Input
+                        type={ra.type === "number" ? "number" : "text"}
+                        value={val}
+                        placeholder={ra.type === "url" ? "https://…" : ""}
+                        error={!!reqErrors[key]}
+                        hint={reqErrors[key]}
+                        onChange={(e) => setVal(e.target.value)}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/*
           Attributes and Variations are sequential steps, so they share one
           card as tabs rather than competing for attention side by side.
@@ -596,9 +772,18 @@ export default function ProductEditPage() {
           <div className={isVariable ? "p-6" : ""}>
             {(!isVariable || dataTab === "attributes") && (
               <AttributeBuilder
-                pool={attributes}
-                value={assignments}
-                onChange={setAssignments}
+                pool={builderPool}
+                value={builderAssignments}
+                onChange={(next) =>
+                  // Preserve the config/required assignments (managed in the
+                  // required card); the builder only owns the rest.
+                  setAssignments([
+                    ...assignments.filter((a) =>
+                      requiredAttrIdSet.has(a.attribute_id)
+                    ),
+                    ...next,
+                  ])
+                }
                 onPoolChange={reloadAttributes}
                 notify={notify}
                 isVariable={isVariable}
@@ -642,6 +827,20 @@ export default function ProductEditPage() {
               Variation images aren’t shown here.
             </p>
           </div>
+
+          {/* Media picker for required image-type attribute fields. */}
+          <MediaPicker
+            isOpen={reqPicker !== null}
+            onClose={() => setReqPicker(null)}
+            onPick={(url) => {
+              if (reqPicker === null) return;
+              setReqValues((v) => ({ ...v, [reqPicker]: url }));
+              setReqErrors((er) => {
+                const { [reqPicker]: _drop, ...rest } = er;
+                return rest;
+              });
+            }}
+          />
 
           <div className={shell}>
             <Model3DField

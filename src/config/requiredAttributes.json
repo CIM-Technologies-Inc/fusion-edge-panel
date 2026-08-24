@@ -8,25 +8,26 @@
         {
           "name": "data-cim-url",
           "label": "Tile image URL",
-          "type": "url",
-          "required": true
-        },
-        {
-          "name": "data-cim-tile-h",
-          "label": "Tile height",
-          "type": "number",
-          "required": true
-        },
-        {
-          "name": "data-cim-tile-w",
-          "label": "Tile width",
-          "type": "number",
+          "type": "image",
           "required": true
         },
         {
           "name": "data-cim-kind",
           "label": "Kind",
           "type": "text",
+          "required": true,
+          "default":"material"
+        },
+        {
+          "name": "data-cim-tile-h",
+          "label": "Tile height (CM)",
+          "type": "number",
+          "required": true
+        },
+        {
+          "name": "data-cim-tile-w",
+          "label": "Tile width (CM)",
+          "type": "number",
           "required": true
         }
       ]
@@ -35,14 +36,39 @@
       "label": "Paint",
       "attributes": [
         {
+          "name": "data-cim-kind",
+          "label": "Kind",
+          "type": "text",
+          "required": true,
+          "default":"paint"
+        },
+        {
+          "name": "data-cim-url",
+          "label": "Paint image URL",
+          "type": "image",
+          "required": false
+        },
+        {
           "name": "data-cim-color-code",
           "label": "Color code",
-          "type": "text",
-          "required": true
-        },
+          "type": "color",
+          "required": false
+        }
+      ]
+      },
+      "furniture": {
+      "label": "Furniture",
+      "attributes": [
         {
           "name": "data-cim-kind",
           "label": "Kind",
+          "type": "text",
+          "required": true,
+          "default":"rfa"
+        },
+        {
+          "name": "data-cim-rfa",
+          "label": "Rfa",
           "type": "text",
           "required": true
         }
