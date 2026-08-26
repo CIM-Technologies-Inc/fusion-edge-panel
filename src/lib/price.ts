@@ -1,23 +1,23 @@
 import type { Product } from "../types/catalogue";
 
-const fmt = new Intl.NumberFormat("en-US", {
+const fmt = new Intl.NumberFormat("en-PH", {
   style: "currency",
-  currency: "USD",
+  currency: "PHP",
 });
 
-/** Cents are integers in the database — divide only at the display edge. */
+/** Centavos are integers in the database — divide only at the display edge. */
 export function formatCents(cents: number | null): string {
   if (cents === null) return "—";
   return fmt.format(cents / 100);
 }
 
-/** A cents value as a plain dollar string for an input field, e.g. "113.79". */
+/** A cents value as a plain peso string for an input field, e.g. "113.79". */
 export function centsToInput(cents: number | null): string {
   if (cents === null) return "";
   return (cents / 100).toFixed(2);
 }
 
-/** Parse a dollar input back to integer cents; empty -> null, invalid -> NaN. */
+/** Parse a peso input back to integer centavos; empty -> null, invalid -> NaN. */
 export function inputToCents(value: string): number | null {
   const trimmed = value.trim();
   if (trimmed === "") return null;

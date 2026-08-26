@@ -257,7 +257,7 @@ export default function VariationBuilder({
               <div className="grid gap-3 sm:grid-cols-3">
                 <div>
                   <span className="block mb-1 text-theme-xs text-gray-500 dark:text-gray-400">
-                    Price (USD) *
+                    Price (PHP) *
                   </span>
                   <Input
                     type="number"

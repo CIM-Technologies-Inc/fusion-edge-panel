@@ -767,7 +767,7 @@ export default function ProductNew() {
               <>
             <div>
               <Label>
-                Price (USD) <span className="text-error-500">*</span>
+                Price (PHP) <span className="text-error-500">*</span>
               </Label>
               <Input
                 type="number"
@@ -782,7 +782,7 @@ export default function ProductNew() {
               />
             </div>
             <div>
-              <Label>Sale price (USD)</Label>
+              <Label>Sale price (PHP)</Label>
               <Input
                 type="number"
                 step={0.01}
