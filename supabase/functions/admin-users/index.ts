@@ -17,9 +17,16 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
-// Set as a function secret — NOT the same as the anon key. See DEPLOY.md.
-const SERVICE_ROLE_KEY = Deno.env.get("SERVICE_ROLE_KEY")!;
+
+// Prefer secrets you set explicitly (ADMIN_FN_ANON_KEY / ADMIN_FN_SERVICE_KEY),
+// falling back to Supabase's auto-injected keys. Setting your own avoids the
+// "Invalid API key" issue on projects using the newer publishable/secret keys.
+const ANON_KEY =
+  Deno.env.get("ADMIN_FN_ANON_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+const SERVICE_ROLE_KEY =
+  Deno.env.get("ADMIN_FN_SERVICE_KEY") ??
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ??
+  "";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -30,12 +37,12 @@ const corsHeaders = {
 
 type Action =
   | { type: "create"; email: string; password?: string; full_name?: string; role?: string }
-  | { type: "invite"; email: string; role?: string }
+  | { type: "invite"; email: string; role?: string; full_name?: string; redirect_to?: string }
   | { type: "delete"; user_id: string }
-  | { type: "setRole"; user_id: string; role: "admin" | "staff" | "customer" }
+  | { type: "setRole"; user_id: string; role: "admin" | "staff" | "supplier" | "customer" }
   | { type: "setBanned"; user_id: string; banned: boolean };
 
-const ROLES = ["admin", "staff", "customer"] as const;
+const ROLES = ["admin", "staff", "supplier", "customer"] as const;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -47,6 +54,15 @@ function json(body: unknown, status = 200) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
+
+  // Fail clearly (WITH cors headers) if the service-role secret is missing,
+  // instead of crashing later and returning a header-less CORS error.
+  if (!SERVICE_ROLE_KEY) {
+    return json(
+      { error: "Server not configured: SERVICE_ROLE_KEY secret is missing." },
+      500
+    );
+  }
 
   // --- 1 & 2: authenticate the caller and require admin ---------------------
   const authHeader = req.headers.get("Authorization") ?? "";
@@ -106,10 +122,20 @@ Deno.serve(async (req) => {
 
       case "invite": {
         if (!action.email) return json({ error: "email is required" }, 400);
-        const { data, error } =
-          await admin.auth.admin.inviteUserByEmail(action.email);
+        // redirectTo sends the invite link to the app's set-password page;
+        // the full name is stored so their profile is named from the start.
+        const { data, error } = await admin.auth.admin.inviteUserByEmail(
+          action.email,
+          {
+            ...(action.redirect_to ? { redirectTo: action.redirect_to } : {}),
+            data: { full_name: action.full_name ?? null },
+          }
+        );
         if (error) return json({ error: error.message }, 400);
-        await applyProfile(admin, data.user!.id, { role: action.role });
+        await applyProfile(admin, data.user!.id, {
+          full_name: action.full_name,
+          role: action.role,
+        });
         return json({ ok: true, user_id: data.user!.id });
       }
 

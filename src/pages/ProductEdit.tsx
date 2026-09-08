@@ -31,6 +31,8 @@ import {
 } from "../lib/products";
 import { useCategories } from "../hooks/useCategories";
 import { useCompanyBrands } from "../hooks/useCompanyBrands";
+import { useSuppliers } from "../hooks/useSuppliers";
+import { useAuth } from "../context/AuthContext";
 import MediaPicker from "../components/media/MediaPicker";
 import {
   resolveRequiredAssignments,
@@ -50,6 +52,7 @@ type FormState = {
   category_id: string;
   brand_id: string;
   company_id: string;
+  supplier_id: string;
   model_3d_url: string;
   short_description: string;
   description: string;
@@ -70,6 +73,8 @@ export default function ProductEditPage() {
   const { attributes, reload: reloadAttributes } = useAttributes(product?.id);
   const { categories } = useCategories();
   const { companies, brandsByCompany } = useCompanyBrands();
+  const { isAdmin } = useAuth();
+  const { suppliers } = useSuppliers(isAdmin);
   const { notify } = useToast();
   const navigate = useNavigate();
 
@@ -103,6 +108,7 @@ export default function ProductEditPage() {
       category_id: product.category?.id ?? "",
       brand_id: product.brand?.id ?? "",
       company_id: product.company?.id ?? "",
+      supplier_id: product.supplier_id ?? "",
       model_3d_url: product.model_3d_url ?? "",
       short_description: product.short_description ?? "",
       description: product.description ?? "",
@@ -258,6 +264,7 @@ export default function ProductEditPage() {
           name: next.name,
           slug: next.slug,
           kind: product.kind,
+          sku: next.sku,
           price_cents: isVariable ? null : Number.isNaN(p) ? null : p,
           sale_price_cents: isVariable ? null : Number.isNaN(s) ? null : s,
           category_id: next.category_id,
@@ -332,6 +339,7 @@ export default function ProductEditPage() {
       name: form.name,
       slug: form.slug,
       kind: product.kind,
+      sku: form.sku,
       price_cents: isVariable ? null : price,
       sale_price_cents: isVariable ? null : salePrice,
       category_id: form.category_id,
@@ -396,6 +404,7 @@ export default function ProductEditPage() {
       brand_id: form.brand_id || null,
       company_id: form.company_id || null,
       model_3d_url: form.model_3d_url.trim() || null,
+      supplier_id: form.supplier_id || null,
       short_description: form.short_description.trim() || null,
       description: descEmpty ? null : descHtml,
       // Never write price columns for a variable product — the trigger owns them.
@@ -543,8 +552,16 @@ export default function ProductEditPage() {
               />
             </div>
             <div>
-              <Label>SKU</Label>
-              <Input value={form.sku} onChange={(e) => set("sku", e.target.value)} />
+              <Label>
+                SKU{" "}
+                {!isVariable && <span className="text-error-500">*</span>}
+              </Label>
+              <Input
+                value={form.sku}
+                error={!!fieldErrors.sku}
+                hint={fieldErrors.sku}
+                onChange={(e) => set("sku", e.target.value)}
+              />
             </div>
           </div>
           <div className="grid gap-5 sm:grid-cols-2">
@@ -644,6 +661,27 @@ export default function ProductEditPage() {
               )}
             </div>
           </div>
+          {/* Supplier assignment — admins only. */}
+          {isAdmin && (
+            <div>
+              <Label>Supplier</Label>
+              <select
+                value={form.supplier_id}
+                onChange={(e) => set("supplier_id", e.target.value)}
+                className={`${inputClass} dark:bg-gray-900`}
+              >
+                <option value="">Unassigned (admin-managed)</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1.5 text-theme-xs text-gray-400">
+                A supplier can only see and edit products assigned to them.
+              </p>
+            </div>
+          )}
           <div>
             <Label>Short description</Label>
             <textarea
@@ -698,12 +736,14 @@ export default function ProductEditPage() {
                           type="color"
                           aria-label={`${ra.label} color`}
                           value={/^#[0-9a-fA-F]{6}$/.test(val) ? val : "#000000"}
+                          disabled={ra.disabled}
                           onChange={(e) => setVal(e.target.value)}
-                          className="h-11 w-12 shrink-0 cursor-pointer rounded-lg border border-gray-300 bg-transparent dark:border-gray-700"
+                          className="h-11 w-12 shrink-0 cursor-pointer rounded-lg border border-gray-300 bg-transparent disabled:opacity-50 dark:border-gray-700"
                         />
                         <Input
                           value={val}
                           placeholder="#000000"
+                          disabled={ra.disabled}
                           error={!!reqErrors[key]}
                           hint={reqErrors[key]}
                           onChange={(e) => setVal(e.target.value)}
@@ -723,23 +763,27 @@ export default function ProductEditPage() {
                         <Input
                           value={val}
                           placeholder="Image URL (https://…)"
+                          disabled={ra.disabled}
                           error={!!reqErrors[key]}
                           hint={reqErrors[key]}
                           onChange={(e) => setVal(e.target.value)}
                         />
-                        <button
-                          type="button"
-                          onClick={() => setReqPicker(key)}
-                          className="h-11 shrink-0 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
-                        >
-                          Choose
-                        </button>
+                        {!ra.disabled && (
+                          <button
+                            type="button"
+                            onClick={() => setReqPicker(key)}
+                            className="h-11 shrink-0 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+                          >
+                            Choose
+                          </button>
+                        )}
                       </div>
                     ) : (
                       <Input
                         type={ra.type === "number" ? "number" : "text"}
                         value={val}
                         placeholder={ra.type === "url" ? "https://…" : ""}
+                        disabled={ra.disabled}
                         error={!!reqErrors[key]}
                         hint={reqErrors[key]}
                         onChange={(e) => setVal(e.target.value)}

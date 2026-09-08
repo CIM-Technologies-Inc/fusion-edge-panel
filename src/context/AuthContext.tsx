@@ -9,10 +9,16 @@ import {
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 
+type Role = "admin" | "staff" | "supplier" | "customer" | null;
+
 type AuthState = {
   session: Session | null;
   /** true once the admin flag has been read from `profiles`. */
   isAdmin: boolean;
+  /** The signed-in user's role, or null when signed out / not yet loaded. */
+  role: Role;
+  /** Convenience: role === "supplier". */
+  isSupplier: boolean;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
@@ -20,18 +26,33 @@ type AuthState = {
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
 
-async function readIsAdmin(userId: string): Promise<boolean> {
+async function readProfile(
+  userId: string
+): Promise<{ isAdmin: boolean; role: Role }> {
+  // Prefer role; fall back to is_admin only if the role column isn't there yet.
+  const withRole = await supabase
+    .from("profiles")
+    .select("is_admin, role")
+    .eq("id", userId)
+    .maybeSingle();
+  if (!withRole.error && withRole.data) {
+    return {
+      isAdmin: withRole.data.is_admin === true,
+      role: (withRole.data.role as Role) ?? null,
+    };
+  }
   const { data } = await supabase
     .from("profiles")
     .select("is_admin")
     .eq("id", userId)
     .maybeSingle();
-  return data?.is_admin === true;
+  return { isAdmin: data?.is_admin === true, role: null };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [role, setRole] = useState<Role>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -40,7 +61,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async function hydrate(next: Session | null) {
       if (!active) return;
       setSession(next);
-      setIsAdmin(next?.user ? await readIsAdmin(next.user.id) : false);
+      if (next?.user) {
+        const p = await readProfile(next.user.id);
+        setIsAdmin(p.isAdmin);
+        setRole(p.role);
+      } else {
+        setIsAdmin(false);
+        setRole(null);
+      }
       setLoading(false);
     }
 
@@ -60,6 +88,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       session,
       isAdmin,
+      role,
+      isSupplier: role === "supplier",
       loading,
       async signIn(email, password) {
         const { error } = await supabase.auth.signInWithPassword({
@@ -72,7 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await supabase.auth.signOut();
       },
     }),
-    [session, isAdmin, loading]
+    [session, isAdmin, role, loading]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

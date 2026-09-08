@@ -1,5 +1,5 @@
 {
-  "$comment": "Required attributes per product category. When a product's category matches a key here, the product form should require these attributes to be present. Match by category slug (case-insensitive). 'attributes' lists the attribute names (slugs) that must be filled in. Extend by adding more category entries.",
+  "$comment": "Required attributes per product category. Matched by category slug (case-insensitive). Each attribute: name (slug), label, type (text|number|url|color|image), required, optional default (pre-filled value), and optional disabled:true (shown but not editable — use with default to lock a fixed value).",
   "version": 1,
   "categories": {
     "tiles": {
@@ -16,7 +16,8 @@
           "label": "Kind",
           "type": "text",
           "required": true,
-          "default":"material"
+          "default":"material",
+          "disabled": true
         },
         {
           "name": "data-cim-tile-h",
@@ -40,7 +41,8 @@
           "label": "Kind",
           "type": "text",
           "required": true,
-          "default":"paint"
+          "default":"paint",
+          "disabled": true
         },
         {
           "name": "data-cim-url",
@@ -64,12 +66,13 @@
           "label": "Kind",
           "type": "text",
           "required": true,
-          "default":"rfa"
+          "default":"rfa",
+          "disabled": true
         },
         {
-          "name": "data-cim-rfa",
-          "label": "Rfa",
-          "type": "text",
+          "name": "data-cim-url",
+          "label": "URL",
+          "type": "image",
           "required": true
         }
       ]

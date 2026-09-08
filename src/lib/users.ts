@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
 
-export type UserRole = "admin" | "staff" | "customer";
+export type UserRole = "admin" | "staff" | "supplier" | "customer";
 
 /** A row from the admin-only `admin_users` view (profiles + email). */
 export type AdminUser = {
@@ -18,6 +18,7 @@ export type AdminUser = {
 export const ROLE_LABEL: Record<UserRole, string> = {
   admin: "Admin",
   staff: "Staff",
+  supplier: "Supplier",
   customer: "Customer",
 };
 
@@ -63,7 +64,7 @@ export async function updateUserProfile(
 
 type AdminAction =
   | { type: "create"; email: string; password?: string; full_name?: string; role?: UserRole }
-  | { type: "invite"; email: string; role?: UserRole }
+  | { type: "invite"; email: string; role?: UserRole; full_name?: string; redirect_to?: string }
   | { type: "delete"; user_id: string }
   | { type: "setRole"; user_id: string; role: UserRole }
   | { type: "setBanned"; user_id: string; banned: boolean };
@@ -96,8 +97,22 @@ export const createUser = (
   opts: { password?: string; full_name?: string; role?: UserRole } = {}
 ) => callAdmin({ type: "create", email, ...opts });
 
-export const inviteUser = (email: string, role?: UserRole) =>
-  callAdmin({ type: "invite", email, role });
+export const inviteUser = (
+  email: string,
+  role?: UserRole,
+  full_name?: string
+) =>
+  callAdmin({
+    type: "invite",
+    email,
+    role,
+    full_name,
+    // Send the invite link to this app's set-password page.
+    redirect_to:
+      typeof window !== "undefined"
+        ? `${window.location.origin}/set-password`
+        : undefined,
+  });
 
 export const deleteUser = (userId: string) =>
   callAdmin({ type: "delete", user_id: userId });

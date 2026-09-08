@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Link } from "react-router";
 import Chart from "react-apexcharts";
 import type { ApexOptions } from "apexcharts";
@@ -6,6 +6,8 @@ import { BoxIcon, GridIcon, GroupIcon, ListIcon } from "../../icons";
 import Badge from "../ui/badge/Badge";
 import { useProducts } from "../../hooks/useProducts";
 import { useDashboardStats } from "../../hooks/useDashboardStats";
+import { useAuth } from "../../context/AuthContext";
+import { useTour, tourUnseen } from "../tour/TourContext";
 import { formatPrice } from "../../lib/price";
 import type { Product } from "../../types/catalogue";
 
@@ -118,8 +120,34 @@ function RecentProducts({ products }: { products: Product[] }) {
 }
 
 export default function CatalogueDashboard() {
-  const { products, loading: productsLoading } = useProducts();
+  const { products: allProducts, loading: productsLoading } = useProducts();
   const { stats } = useDashboardStats();
+  const { isSupplier, session } = useAuth();
+  const { start: startTour } = useTour();
+
+  // Auto-start the walkthrough once, ever, for a new supplier (per-user flag).
+  useEffect(() => {
+    if (!isSupplier) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    tourUnseen().then((unseen) => {
+      if (cancelled || !unseen) return;
+      timer = setTimeout(() => startTour(), 600);
+    });
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [isSupplier, startTour]);
+
+  // Suppliers see only their own products in every dashboard number.
+  const products = useMemo(
+    () =>
+      isSupplier && session?.user
+        ? allProducts.filter((p) => p.supplier_id === session.user.id)
+        : allProducts,
+    [allProducts, isSupplier, session]
+  );
 
   // Everything derived from the product list, computed once.
   const derived = useMemo(() => {
@@ -210,32 +238,74 @@ export default function CatalogueDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 gap-4 md:gap-6 lg:grid-cols-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-gray-800 dark:text-white/90">
+          Overview
+        </h2>
+        <button
+          type="button"
+          onClick={startTour}
+          className="inline-flex items-center h-9 gap-2 px-3 text-sm font-medium border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+        >
+          <span aria-hidden>💡</span> Take a tour
+        </button>
+      </div>
+
+      {/* Stat cards. Suppliers get numbers about their own products only;
+          admins get the catalogue-wide totals. */}
+      <div
+        data-tour="dashboard-stats"
+        className="grid grid-cols-2 gap-4 md:gap-6 lg:grid-cols-4"
+      >
         <StatCard
           icon={<BoxIcon className="w-5 h-5" />}
           label="Products"
           value={productsLoading ? "…" : total}
           sub={`${derived.published} published · ${derived.draft} draft`}
         />
-        <StatCard
-          icon={<ListIcon className="w-5 h-5" />}
-          label="Variations"
-          value={stats.variations}
-          sub={`${derived.inStock} products in stock`}
-        />
-        <StatCard
-          icon={<GridIcon className="w-5 h-5" />}
-          label="Categories / Brands"
-          value={`${stats.categories} / ${stats.brands}`}
-          sub={`${stats.companies} companies`}
-        />
-        <StatCard
-          icon={<GroupIcon className="w-5 h-5" />}
-          label="Users"
-          value={stats.users}
-          sub={`${stats.savedItems} saved items`}
-        />
+        {isSupplier ? (
+          <>
+            <StatCard
+              icon={<ListIcon className="w-5 h-5" />}
+              label="Published"
+              value={derived.published}
+              sub={`${derived.draft} in draft`}
+            />
+            <StatCard
+              icon={<GridIcon className="w-5 h-5" />}
+              label="In stock"
+              value={derived.inStock}
+              sub={`${derived.outOfStock} out of stock`}
+            />
+            <StatCard
+              icon={<GroupIcon className="w-5 h-5" />}
+              label="Featured"
+              value={derived.featured}
+              sub="of your products"
+            />
+          </>
+        ) : (
+          <>
+            <StatCard
+              icon={<ListIcon className="w-5 h-5" />}
+              label="Variations"
+              value={stats.variations}
+              sub={`${derived.inStock} products in stock`}
+            />
+            <StatCard
+              icon={<GridIcon className="w-5 h-5" />}
+              label="Categories / Brands"
+              value={`${stats.categories} / ${stats.brands}`}
+              sub={`${stats.companies} companies`}
+            />
+            <StatCard
+              icon={<GroupIcon className="w-5 h-5" />}
+              label="Users"
+              value={stats.users}
+              sub={`${stats.savedItems} saved items`}
+            />
+          </>
+        )}
       </div>
 
       {/* Charts */}

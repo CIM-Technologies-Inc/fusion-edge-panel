@@ -10,6 +10,8 @@ export type RequiredAttribute = {
   required: boolean;
   /** Value to pre-fill the field with when empty. Optional. */
   default?: string;
+  /** When true, the field is shown (with its value) but can't be edited. */
+  disabled?: boolean;
 };
 
 type CategoryConfig = {

@@ -28,25 +28,23 @@ supabase/migrations/0003_user_roles.sql
 This adds the `role` enum, `banned_at`, keeps `is_admin` in sync, and creates
 the admin-only `admin_users` view. The function and the UI both depend on it.
 
-## 2. Set the service-role secret
+## 2. Service-role key — nothing to set
 
-Find your **service_role** key in the dashboard:
-Project Settings → API → Project API keys → `service_role` (click reveal).
+The function reads `SUPABASE_SERVICE_ROLE_KEY`, which Supabase **injects into
+every Edge Function automatically**. You do NOT need to set any secret.
 
-> ⚠️ This key bypasses RLS. Never put it in `.env`, the frontend, or git.
-> It only ever lives as a function secret.
+> Do not try `supabase secrets set SUPABASE_SERVICE_ROLE_KEY=...` — Supabase
+> reserves the `SUPABASE_` prefix and will reject it. It's already available.
 
-```bash
-supabase secrets set SERVICE_ROLE_KEY=<your-service-role-key>
-```
-
-`SUPABASE_URL` and `SUPABASE_ANON_KEY` are injected into Edge Functions
-automatically — you do **not** need to set those.
+`SUPABASE_URL` and `SUPABASE_ANON_KEY` are injected the same way.
 
 ## 3. Deploy
 
+Deploy with `--no-verify-jwt` so the browser's CORS preflight reaches the
+function (which does its own admin check internally):
+
 ```bash
-supabase functions deploy admin-users
+supabase functions deploy admin-users --no-verify-jwt
 ```
 
 ## 4. Verify

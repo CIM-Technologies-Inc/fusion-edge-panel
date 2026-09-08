@@ -61,13 +61,16 @@ const usersNavItem: NavItem = {
 
 const AppSidebar: React.FC = () => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered } = useSidebar();
-  const { isAdmin } = useAuth();
+  const { isAdmin, isSupplier } = useAuth();
   const location = useLocation();
 
-  // Attribute management and Media are admin-only, so non-admins get the
-  // plain Product link and no Media entry.
+  // Admins get the full nav. Suppliers manage their own products and need Media
+  // (for image uploads) but not the admin-only sections. Everyone else gets the
+  // plain Product link.
   const navItems: NavItem[] = isAdmin
     ? [dashboardItem, productAdminItem, mediaNavItem, usersNavItem]
+    : isSupplier
+    ? [dashboardItem, productItem, mediaNavItem]
     : [dashboardItem, productItem];
 
   const [openSubmenu, setOpenSubmenu] = useState<{
@@ -172,6 +175,9 @@ const AppSidebar: React.FC = () => {
             nav.path && (
               <Link
                 to={nav.path}
+                data-tour={
+                  nav.path === "/product" ? "nav-product" : undefined
+                }
                 className={`menu-item group ${
                   isActive(nav.path) ? "menu-item-active" : "menu-item-inactive"
                 }`}

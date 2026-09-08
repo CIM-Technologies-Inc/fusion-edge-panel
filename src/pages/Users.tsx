@@ -27,7 +27,9 @@ const shell =
 const inputClass =
   "h-11 rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90";
 
-const ROLES: UserRole[] = ["admin", "staff", "customer"];
+// Roles an admin can assign from the UI. "customer" (default signup role) and
+// "staff" are intentionally omitted.
+const ROLES: UserRole[] = ["admin", "supplier"];
 
 function fmtDate(iso: string | null) {
   if (!iso) return "—";
@@ -50,7 +52,7 @@ export default function Users() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
-  const [newRole, setNewRole] = useState<UserRole>("customer");
+  const [newRole, setNewRole] = useState<UserRole>("supplier");
   const [saving, setSaving] = useState(false);
 
   // Edit-name modal.
@@ -77,7 +79,7 @@ export default function Users() {
     setEmail("");
     setPassword("");
     setFullName("");
-    setNewRole("customer");
+    setNewRole("supplier");
     setMode("invite");
   };
 
@@ -93,7 +95,7 @@ export default function Users() {
     setSaving(true);
     const { error } =
       mode === "invite"
-        ? await inviteUser(email.trim(), newRole)
+        ? await inviteUser(email.trim(), newRole, fullName.trim() || undefined)
         : await createUser(email.trim(), {
             password,
             full_name: fullName.trim() || undefined,
@@ -293,7 +295,13 @@ export default function Users() {
                                 : undefined
                             }
                           >
-                            {ROLES.map((r) => (
+                            {/* Include the user's current role even if it's
+                                not assignable (e.g. customer), so the row shows
+                                it and can be promoted. */}
+                            {(ROLES.includes(u.role)
+                              ? ROLES
+                              : [u.role, ...ROLES]
+                            ).map((r) => (
                               <option key={r} value={r}>
                                 {ROLE_LABEL[r]}
                               </option>
@@ -417,15 +425,16 @@ export default function Users() {
               onChange={(e) => setEmail(e.target.value)}
             />
           </div>
+          <div>
+            <Label>Full name</Label>
+            <Input
+              value={fullName}
+              placeholder="Jane Cruz"
+              onChange={(e) => setFullName(e.target.value)}
+            />
+          </div>
           {mode === "create" && (
             <>
-              <div>
-                <Label>Full name</Label>
-                <Input
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                />
-              </div>
               <div>
                 <Label>Temporary password</Label>
                 <Input

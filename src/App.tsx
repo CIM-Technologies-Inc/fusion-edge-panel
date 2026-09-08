@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router";
 import SignIn from "./pages/AuthPages/SignIn";
 import SignUp from "./pages/AuthPages/SignUp";
+import SetPassword from "./pages/AuthPages/SetPassword";
 import NotFound from "./pages/OtherPage/NotFound";
 import UserProfiles from "./pages/UserProfiles";
 import Videos from "./pages/UiElements/Videos";
@@ -24,18 +25,24 @@ import Attributes from "./pages/Attributes";
 import Categories from "./pages/Categories";
 import Brands from "./pages/Brands";
 import Companies from "./pages/Companies";
+import BulkPrices from "./pages/BulkPrices";
 import Users from "./pages/Users";
 import RequireAdmin from "./components/auth/RequireAdmin";
+import RequireProductManager from "./components/auth/RequireProductManager";
 import RequireAuth from "./components/auth/RequireAuth";
 import AppLayout from "./layout/AppLayout";
 import { ScrollToTop } from "./components/common/ScrollToTop";
 import Home from "./pages/Dashboard/Home";
+import { TourProvider } from "./components/tour/TourContext";
+import TourOverlay from "./components/tour/TourOverlay";
 
 export default function App() {
   return (
     <>
       <Router>
         <ScrollToTop />
+        <TourProvider>
+        <TourOverlay />
         <Routes>
           {/* Dashboard Layout — requires a signed-in user */}
           <Route element={<RequireAuth />}>
@@ -45,15 +52,21 @@ export default function App() {
             {/* Product */}
             <Route path="/product" element={<Product />} />
 
-            {/* Admin-only product create + editing (static /new before :slug) */}
-            <Route element={<RequireAdmin />}>
+            {/* Product create + edit: admins and suppliers (own products,
+                enforced by RLS). Static /new before :slug. */}
+            <Route element={<RequireProductManager />}>
               <Route path="/product/new" element={<ProductNew />} />
+              <Route path="/product/:slug/edit" element={<ProductEdit />} />
+              <Route path="/product/bulk-prices" element={<BulkPrices />} />
+              <Route path="/media" element={<Media />} />
+            </Route>
+
+            {/* Admin-only management pages. */}
+            <Route element={<RequireAdmin />}>
               <Route path="/product/attributes" element={<Attributes />} />
               <Route path="/product/categories" element={<Categories />} />
               <Route path="/product/brands" element={<Brands />} />
               <Route path="/product/companies" element={<Companies />} />
-              <Route path="/product/:slug/edit" element={<ProductEdit />} />
-              <Route path="/media" element={<Media />} />
               <Route path="/users" element={<Users />} />
             </Route>
 
@@ -87,10 +100,13 @@ export default function App() {
           {/* Auth Layout */}
           <Route path="/signin" element={<SignIn />} />
           <Route path="/signup" element={<SignUp />} />
+          {/* Invited users land here from the email link to set a password. */}
+          <Route path="/set-password" element={<SetPassword />} />
 
           {/* Fallback Route */}
           <Route path="*" element={<NotFound />} />
         </Routes>
+        </TourProvider>
       </Router>
     </>
   );

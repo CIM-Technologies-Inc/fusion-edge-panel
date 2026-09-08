@@ -279,10 +279,11 @@ export default function VariationBuilder({
                 </div>
                 <div>
                   <span className="block mb-1 text-theme-xs text-gray-500 dark:text-gray-400">
-                    SKU
+                    SKU <span className="text-error-500">*</span>
                   </span>
                   <Input
                     value={d.sku}
+                    error={!d.sku.trim()}
                     onChange={(e) => patch(i, { sku: e.target.value })}
                   />
                 </div>

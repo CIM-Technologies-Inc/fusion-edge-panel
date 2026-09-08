@@ -17,7 +17,7 @@ const buildSelect = (
   id, name, slug, sku, kind, description, short_description,
   price_cents, sale_price_cents, price_max_cents,
   in_stock, featured, published, created_at,
-  ${withModel ? "model_3d_url," : ""}
+  ${withModel ? "model_3d_url, supplier_id," : ""}
   category:categories ( id, name, slug ),
   ${withBrand ? BRAND_SELECT : ""}
   images:product_images ( id, url, alt, position, variation_id ),
@@ -108,7 +108,7 @@ export function useProduct(slug: string | undefined) {
       // Stop once it succeeds, or on an error that isn't about these columns.
       if (
         !error ||
-        !/brand|compan|model_3d|variation_meta/i.test(error.message)
+        !/brand|compan|model_3d|supplier|variation_meta/i.test(error.message)
       )
         break;
     }

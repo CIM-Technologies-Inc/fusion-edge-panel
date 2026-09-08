@@ -13,6 +13,7 @@ import ImagePreview from "../components/product/ImagePreview";
 import Model3DField from "../components/product/Model3DField";
 import MediaPicker from "../components/media/MediaPicker";
 import { useToast } from "../context/ToastContext";
+import { useAuth } from "../context/AuthContext";
 import { useCategories } from "../hooks/useCategories";
 import { useCompanyBrands } from "../hooks/useCompanyBrands";
 import { useAttributes } from "../hooks/useAttributes";
@@ -44,6 +45,7 @@ export default function ProductNew() {
   const { companies, brandsByCompany } = useCompanyBrands();
   const { attributes, reload: reloadAttributes } = useAttributes();
   const { notify } = useToast();
+  const { isSupplier, session } = useAuth();
   const navigate = useNavigate();
   const [assignments, setAssignments] = useState<AttributeAssignment[]>([]);
   // Values typed on this page before the product exists. Held locally and
@@ -121,6 +123,7 @@ export default function ProductNew() {
   const revalidate = (over: Partial<{
     name: string;
     slug: string;
+    sku: string;
     price: string;
     salePrice: string;
     images: string[];
@@ -138,6 +141,7 @@ export default function ProductNew() {
         name: over.name ?? name,
         slug: over.slug ?? slug,
         kind,
+        sku: over.sku ?? sku,
         price_cents: variable ? null : Number.isNaN(p) ? null : p,
         sale_price_cents: variable ? null : Number.isNaN(s) ? null : s,
         image_urls: (over.images ?? images).map((u) => u.trim()).filter(Boolean),
@@ -234,6 +238,7 @@ export default function ProductNew() {
       name,
       slug,
       kind,
+      sku,
       price_cents: effectivePrice,
       sale_price_cents: effectiveSale,
       image_urls: imageUrls,
@@ -283,6 +288,8 @@ export default function ProductNew() {
       brand_id: brandId || null,
       company_id: companyId || null,
       model_3d_url: model3d.trim() || null,
+      // A supplier's new products are owned by them; admins create unowned.
+      supplier_id: isSupplier ? session?.user?.id ?? null : null,
       short_description: shortDesc.trim() || null,
       description: descEmpty ? null : descHtml,
       price_cents: effectivePrice,
@@ -395,7 +402,7 @@ export default function ProductNew() {
       </div>
 
       {/* Kind selector — simple works now; variable is coming. */}
-      <div className={`${shell} mb-6`}>
+      <div data-tour="product-type" className={`${shell} mb-6`}>
         <Label>Product type</Label>
         <div className="grid gap-3 sm:grid-cols-2">
           <button
@@ -437,7 +444,7 @@ export default function ProductNew() {
       <form onSubmit={handleSubmit} className="grid gap-6 lg:grid-cols-3">
         {/* Left column: details card, then the attributes card. */}
         <div className="space-y-6 lg:col-span-2">
-        <div className={`${shell} space-y-5`}>
+        <div data-tour="product-basics" className={`${shell} space-y-5`}>
           <div>
             <Label>
               Name <span className="text-error-500">*</span>
@@ -466,8 +473,21 @@ export default function ProductNew() {
               />
             </div>
             <div>
-              <Label>SKU</Label>
-              <Input value={sku} onChange={(e) => setSku(e.target.value)} />
+              <Label>
+                SKU{" "}
+                {kind === "simple" && (
+                  <span className="text-error-500">*</span>
+                )}
+              </Label>
+              <Input
+                value={sku}
+                error={!!fieldErrors.sku}
+                hint={fieldErrors.sku}
+                onChange={(e) => {
+                  setSku(e.target.value);
+                  revalidate({ sku: e.target.value });
+                }}
+              />
             </div>
           </div>
           <div className="grid gap-5 sm:grid-cols-2">
@@ -624,12 +644,14 @@ export default function ProductNew() {
                           type="color"
                           aria-label={`${ra.label} color`}
                           value={/^#[0-9a-fA-F]{6}$/.test(val) ? val : "#000000"}
+                          disabled={ra.disabled}
                           onChange={(e) => setVal(e.target.value)}
-                          className="h-11 w-12 shrink-0 cursor-pointer rounded-lg border border-gray-300 bg-transparent dark:border-gray-700"
+                          className="h-11 w-12 shrink-0 cursor-pointer rounded-lg border border-gray-300 bg-transparent disabled:opacity-50 dark:border-gray-700"
                         />
                         <Input
                           value={val}
                           placeholder="#000000"
+                          disabled={ra.disabled}
                           error={!!reqErrors[ra.name]}
                           hint={reqErrors[ra.name]}
                           onChange={(e) => setVal(e.target.value)}
@@ -649,23 +671,27 @@ export default function ProductNew() {
                         <Input
                           value={val}
                           placeholder="Image URL (https://…)"
+                          disabled={ra.disabled}
                           error={!!reqErrors[ra.name]}
                           hint={reqErrors[ra.name]}
                           onChange={(e) => setVal(e.target.value)}
                         />
-                        <button
-                          type="button"
-                          onClick={() => setReqPicker(ra.name)}
-                          className="h-11 shrink-0 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
-                        >
-                          Choose
-                        </button>
+                        {!ra.disabled && (
+                          <button
+                            type="button"
+                            onClick={() => setReqPicker(ra.name)}
+                            className="h-11 shrink-0 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+                          >
+                            Choose
+                          </button>
+                        )}
                       </div>
                     ) : (
                       <Input
                         type={ra.type === "number" ? "number" : "text"}
                         value={val}
                         placeholder={ra.type === "url" ? "https://…" : ""}
+                        disabled={ra.disabled}
                         error={!!reqErrors[ra.name]}
                         hint={reqErrors[ra.name]}
                         onChange={(e) => setVal(e.target.value)}
@@ -679,7 +705,7 @@ export default function ProductNew() {
         )}
 
         {/* Attributes get their own card, separate from the product details. */}
-        <div className={shell}>
+        <div data-tour="product-attributes" className={shell}>
           <AttributeBuilder
             pool={builderPool}
             value={assignments}
@@ -707,7 +733,7 @@ export default function ProductNew() {
         </div>
 
         <div className="space-y-6">
-          <div className={shell}>
+          <div data-tour="product-images" className={shell}>
             <ImagePreview
               urls={images}
               error={fieldErrors.images}

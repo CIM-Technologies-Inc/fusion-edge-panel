@@ -13,6 +13,8 @@ export type ProductEdit = {
   company_id: string | null;
   /** Optional URL to a glTF/GLB 3D model. */
   model_3d_url: string | null;
+  /** Owning supplier's profile id, or null (admin-managed). */
+  supplier_id: string | null;
   short_description: string | null;
   description: string | null;
   /** null for variable products — the trigger maintains their price. */
@@ -74,11 +76,23 @@ export async function updateProduct(
   return { error: error?.message ?? null };
 }
 
+/**
+ * Delete a product. Its variations, images and attribute links are removed by
+ * ON DELETE CASCADE; RLS lets admins delete any, suppliers only their own.
+ */
+export async function deleteProduct(
+  id: string
+): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("products").delete().eq("id", id);
+  return { error: error?.message ?? null };
+}
+
 /** Per-field error messages, keyed by form field name. Empty = valid. */
 export type FieldErrors = Partial<
   Record<
     | "name"
     | "slug"
+    | "sku"
     | "category"
     | "brand"
     | "company"
@@ -117,6 +131,11 @@ export function validateFields(input: {
    * skip the check.
    */
   company_id?: string;
+  /**
+   * SKU. Pass a string (even "") to require it; omit to skip. Only enforced on
+   * simple products — a variable product's SKUs live on its variations.
+   */
+  sku?: string;
 }): FieldErrors {
   const errors: FieldErrors = {};
 
@@ -125,6 +144,14 @@ export function validateFields(input: {
   if (!input.slug.trim()) errors.slug = "Slug is required.";
   else if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(input.slug.trim()))
     errors.slug = "Lowercase words separated by hyphens.";
+
+  // SKU required on simple products (variable products get SKUs per variation).
+  if (
+    input.sku !== undefined &&
+    input.kind === "simple" &&
+    !input.sku.trim()
+  )
+    errors.sku = "SKU is required.";
 
   if (input.category_id !== undefined && !input.category_id)
     errors.category = "Choose a category.";
@@ -217,7 +244,7 @@ export async function duplicateProduct(
   const { data: src, error: readErr } = await supabase
     .from("products")
     .select(
-      `id, name, slug, kind, category_id, brand_id, company_id, model_3d_url,
+      `id, name, slug, kind, category_id, brand_id, company_id, model_3d_url, supplier_id,
        short_description, description,
        price_cents, sale_price_cents, in_stock, featured,
        product_images ( url, alt, position, variation_id ),
@@ -251,6 +278,7 @@ export async function duplicateProduct(
       brand_id: src.brand_id,
       company_id: src.company_id,
       model_3d_url: src.model_3d_url,
+      supplier_id: src.supplier_id,
       short_description: src.short_description,
       description: src.description,
       price_cents: isVariable ? null : src.price_cents,
@@ -426,6 +454,7 @@ export async function createProduct(
     brand_id: create.brand_id,
     company_id: create.company_id,
     model_3d_url: create.model_3d_url,
+    supplier_id: create.supplier_id,
     short_description: create.short_description,
     description: create.description,
     // Variable products leave price null — the trigger fills the range.

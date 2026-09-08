@@ -2,6 +2,40 @@ import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from "./supabase";
 
 export const MEDIA_BUCKET = "media";
 
+/**
+ * Where the current user's uploads live and what they can list.
+ *
+ * Suppliers are scoped to a folder named by their user id, so their media
+ * library shows only their own files. Admins (and legacy files) use the bucket
+ * root and see everything. Returns:
+ *   prefix   — folder to upload into ("" for admin, "<uid>/" for supplier)
+ *   scoped   — true when the caller should only see their own folder
+ *   userId   — the caller's id (for scoped listing)
+ */
+async function mediaScope(): Promise<{
+  prefix: string;
+  scoped: boolean;
+  userId: string | null;
+}> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const userId = session?.user?.id ?? null;
+  if (!userId) return { prefix: "", scoped: false, userId: null };
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", userId)
+    .maybeSingle();
+
+  // Only suppliers are folder-scoped. Admins/staff see the whole bucket.
+  if (profile?.role === "supplier") {
+    return { prefix: `${userId}/`, scoped: true, userId };
+  }
+  return { prefix: "", scoped: false, userId };
+}
+
 /** Hard ceiling — files bigger than this are rejected outright. */
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
 /** Above this, we compress/resize before upload to keep storage lean. */
@@ -100,7 +134,8 @@ export async function uploadFile(
     return { url: null, error: prepared.error };
   const ready = prepared.file;
 
-  const path = safeName(ready.name);
+  const { prefix } = await mediaScope();
+  const path = prefix + safeName(ready.name);
   const { error } = await storage().upload(path, ready, {
     cacheControl: "3600",
     contentType: ready.type,
@@ -127,7 +162,8 @@ export async function uploadModel3D(
     return { url: null, error: `Model is ${mb} MB. The limit is 30 MB.` };
   }
 
-  const path = safeName(file.name);
+  const { prefix } = await mediaScope();
+  const path = prefix + safeName(file.name);
   const contentType = /\.glb$/i.test(file.name)
     ? "model/gltf-binary"
     : "model/gltf+json";
@@ -161,7 +197,8 @@ export async function uploadFileWithProgress(
   } = await supabase.auth.getSession();
   const token = session?.access_token ?? SUPABASE_ANON_KEY;
 
-  const path = safeName(ready.name);
+  const { prefix } = await mediaScope();
+  const path = prefix + safeName(ready.name);
   const endpoint = `${SUPABASE_URL}/storage/v1/object/${MEDIA_BUCKET}/${path}`;
 
   return new Promise((resolve) => {
@@ -222,18 +259,46 @@ export async function overwriteFile(
   return { url: `${publicUrl(path)}?v=${Date.now()}`, error: null };
 }
 
+/** List objects directly under a folder (prefix like "" or "<uid>/"). */
+async function listFolder(folder: string): Promise<MediaFile[]> {
+  const { data } = await storage().list(folder.replace(/\/$/, ""), {
+    limit: 200,
+    sortBy: { column: "created_at", order: "desc" },
+  });
+  return (data ?? [])
+    // list() returns placeholder rows for sub-folders (id === null) — skip them.
+    .filter((o) => o.id !== null)
+    .map((o) => {
+      const path = folder + o.name;
+      return {
+        name: o.name,
+        path,
+        url: publicUrl(path),
+        size: o.metadata?.size ?? 0,
+        createdAt: o.created_at ?? null,
+      };
+    });
+}
+
 export async function listFiles(): Promise<{
   files: MediaFile[];
   error: string | null;
 }> {
-  const { data, error } = await storage().list("", {
+  const { scoped, prefix } = await mediaScope();
+
+  // Suppliers see only their own folder.
+  if (scoped) {
+    return { files: await listFolder(prefix), error: null };
+  }
+
+  // Admins/staff see the bucket root plus every supplier's folder.
+  const { data: top, error } = await storage().list("", {
     limit: 200,
     sortBy: { column: "created_at", order: "desc" },
   });
   if (error) return { files: [], error: error.message };
 
-  const files = (data ?? [])
-    // list() can return a placeholder folder row with no id — skip it.
+  const rootFiles: MediaFile[] = (top ?? [])
     .filter((o) => o.id !== null)
     .map((o) => ({
       name: o.name,
@@ -242,6 +307,18 @@ export async function listFiles(): Promise<{
       size: o.metadata?.size ?? 0,
       createdAt: o.created_at ?? null,
     }));
+
+  // Folder rows have id === null; recurse into each to gather supplier uploads.
+  const folders = (top ?? [])
+    .filter((o) => o.id === null)
+    .map((o) => `${o.name}/`);
+  const folderFiles = (
+    await Promise.all(folders.map((f) => listFolder(f)))
+  ).flat();
+
+  const files = [...rootFiles, ...folderFiles].sort((a, b) =>
+    (b.createdAt ?? "").localeCompare(a.createdAt ?? "")
+  );
   return { files, error: null };
 }
 

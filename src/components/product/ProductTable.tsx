@@ -33,18 +33,23 @@ function Thumb({ product }: { product: Product }) {
 
 type Props = {
   products: Product[];
-  /** Admins get row actions (duplicate); omit for the read-only view. */
+  /** Managers get row actions (edit/duplicate/delete); omit for read-only. */
   onDuplicate?: (product: Product) => void;
+  onDelete?: (product: Product) => void;
   duplicatingId?: string | null;
+  deletingId?: string | null;
 };
 
 export default function ProductTable({
   products,
   onDuplicate,
+  onDelete,
   duplicatingId,
+  deletingId,
 }: Props) {
+  const showActions = !!onDuplicate || !!onDelete;
   const headers = ["Product", "SKU", "Category", "Type", "Price", "Status"];
-  if (onDuplicate) headers.push("Actions");
+  if (showActions) headers.push("Actions");
 
   return (
     <div className="overflow-hidden bg-white border border-gray-200 rounded-2xl dark:border-gray-800 dark:bg-white/[0.03]">
@@ -123,7 +128,7 @@ export default function ProductTable({
                   </div>
                 </TableCell>
 
-                {onDuplicate && (
+                {showActions && (
                   <TableCell className="px-5 py-4 text-start">
                     <div className="flex items-center gap-2">
                       <Link
@@ -132,17 +137,38 @@ export default function ProductTable({
                       >
                         Edit
                       </Link>
-                      <span className="text-gray-300 dark:text-gray-700">|</span>
-                      <button
-                        type="button"
-                        onClick={() => onDuplicate(product)}
-                        disabled={duplicatingId === product.id}
-                        className="text-gray-500 hover:text-brand-500 text-theme-sm disabled:opacity-50"
-                      >
-                        {duplicatingId === product.id
-                          ? "Duplicating…"
-                          : "Duplicate"}
-                      </button>
+                      {onDuplicate && (
+                        <>
+                          <span className="text-gray-300 dark:text-gray-700">
+                            |
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => onDuplicate(product)}
+                            disabled={duplicatingId === product.id}
+                            className="text-gray-500 hover:text-brand-500 text-theme-sm disabled:opacity-50"
+                          >
+                            {duplicatingId === product.id
+                              ? "Duplicating…"
+                              : "Duplicate"}
+                          </button>
+                        </>
+                      )}
+                      {onDelete && (
+                        <>
+                          <span className="text-gray-300 dark:text-gray-700">
+                            |
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => onDelete(product)}
+                            disabled={deletingId === product.id}
+                            className="text-gray-400 hover:text-error-500 text-theme-sm disabled:opacity-50"
+                          >
+                            {deletingId === product.id ? "Deleting…" : "Delete"}
+                          </button>
+                        </>
+                      )}
                     </div>
                   </TableCell>
                 )}

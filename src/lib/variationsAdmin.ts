@@ -80,13 +80,16 @@ export function validateVariations(drafts: VariationDraft[]): string | null {
     if (sale !== null && sale >= price)
       return `${label}: sale price must be below the price.`;
 
+    // SKU is required on every variation.
+    if (!d.sku.trim()) return `${label}: SKU is required.`;
+
     // variation_terms' PK is (variation_id, attribute_id) — one term each.
     const key = comboKey(d.terms);
     if (seen.has(key)) return `${label}: duplicate combination.`;
     seen.add(key);
   }
 
-  // sku is UNIQUE across all variations.
+  // sku is UNIQUE across all variations (and, at the DB level, across products).
   const skus = drafts.map((d) => d.sku.trim()).filter(Boolean);
   if (new Set(skus).size !== skus.length)
     return "Two variations share the same SKU.";

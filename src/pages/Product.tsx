@@ -6,7 +6,7 @@ import ProductTable from "../components/product/ProductTable";
 import { useProducts } from "../hooks/useProducts";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
-import { duplicateProduct } from "../lib/products";
+import { deleteProduct, duplicateProduct } from "../lib/products";
 import type { Product as ProductType } from "../types/catalogue";
 
 type StatusFilter = "all" | "published" | "draft";
@@ -15,13 +15,42 @@ const shell =
   "rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/[0.03]";
 
 export default function Product() {
-  const { products, loading, error, reload } = useProducts();
-  const { isAdmin } = useAuth();
+  const { products: allProducts, loading, error, reload } = useProducts();
+  const { isAdmin, isSupplier, session } = useAuth();
+  // Suppliers see only their own products (RLS also enforces this server-side).
+  const products = useMemo(
+    () =>
+      isSupplier && session?.user
+        ? allProducts.filter((p) => p.supplier_id === session.user.id)
+        : allProducts,
+    [allProducts, isSupplier, session]
+  );
   const { notify } = useToast();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const handleDelete = async (product: ProductType) => {
+    if (
+      !window.confirm(
+        `Delete “${product.name}”? This removes the product and all its ` +
+          `variations and images. This cannot be undone.`
+      )
+    )
+      return;
+    setDeletingId(product.id);
+    const { error } = await deleteProduct(product.id);
+    setDeletingId(null);
+
+    if (error) {
+      notify("error", "Delete failed", error);
+      return;
+    }
+    notify("info", "Product deleted", product.name);
+    reload();
+  };
 
   const handleDuplicate = async (product: ProductType) => {
     setDuplicatingId(product.id);
@@ -95,13 +124,22 @@ export default function Product() {
             >
               Refresh
             </button>
-            {isAdmin && (
-              <Link
-                to="/product/new"
-                className="inline-flex items-center h-11 px-4 text-sm font-medium text-white rounded-lg bg-brand-500 hover:bg-brand-600"
-              >
-                + New product
-              </Link>
+            {(isAdmin || isSupplier) && (
+              <>
+                <Link
+                  to="/product/bulk-prices"
+                  className="inline-flex items-center h-11 px-4 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+                >
+                  Bulk prices
+                </Link>
+                <Link
+                  to="/product/new"
+                  data-tour="new-product-btn"
+                  className="inline-flex items-center h-11 px-4 text-sm font-medium text-white rounded-lg bg-brand-500 hover:bg-brand-600"
+                >
+                  + New product
+                </Link>
+              </>
             )}
           </div>
         </div>
@@ -133,8 +171,10 @@ export default function Product() {
         ) : (
           <ProductTable
             products={visible}
-            onDuplicate={isAdmin ? handleDuplicate : undefined}
+            onDuplicate={isAdmin || isSupplier ? handleDuplicate : undefined}
+            onDelete={isAdmin || isSupplier ? handleDelete : undefined}
             duplicatingId={duplicatingId}
+            deletingId={deletingId}
           />
         )}
       </div>
