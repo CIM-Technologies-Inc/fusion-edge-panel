@@ -23,12 +23,16 @@ import ProductNew from "./pages/ProductNew";
 import Media from "./pages/Media";
 import Attributes from "./pages/Attributes";
 import Categories from "./pages/Categories";
-import Brands from "./pages/Brands";
 import Companies from "./pages/Companies";
+import CompanyDetail from "./pages/CompanyDetail";
 import BulkPrices from "./pages/BulkPrices";
 import Users from "./pages/Users";
+import Roles from "./pages/Roles";
+import Approvals from "./pages/Approvals";
+import ApprovalReview from "./pages/ApprovalReview";
 import RequireAdmin from "./components/auth/RequireAdmin";
 import RequireProductManager from "./components/auth/RequireProductManager";
+import RequireCan from "./components/auth/RequireCan";
 import RequireAuth from "./components/auth/RequireAuth";
 import AppLayout from "./layout/AppLayout";
 import { ScrollToTop } from "./components/common/ScrollToTop";
@@ -52,22 +56,45 @@ export default function App() {
             {/* Product */}
             <Route path="/product" element={<Product />} />
 
-            {/* Product create + edit: admins and suppliers (own products,
-                enforced by RLS). Static /new before :slug. */}
+            {/* Product create + edit: admins and product managers (own
+                products, enforced by RLS). Static /new before :slug. */}
             <Route element={<RequireProductManager />}>
               <Route path="/product/new" element={<ProductNew />} />
               <Route path="/product/:slug/edit" element={<ProductEdit />} />
               <Route path="/product/bulk-prices" element={<BulkPrices />} />
-              <Route path="/media" element={<Media />} />
             </Route>
 
-            {/* Admin-only management pages. */}
+            {/* Permission-gated management pages. */}
+            <Route element={<RequireCan resource="media" action="view" />}>
+              <Route path="/media" element={<Media />} />
+            </Route>
+            <Route element={<RequireCan resource="category" action="view" />}>
+              <Route path="/product/categories" element={<Categories />} />
+            </Route>
+            <Route element={<RequireCan resource="company" action="view" />}>
+              <Route path="/product/companies" element={<Companies />} />
+            </Route>
+            {/* Company detail: any signed-in user may open it. RLS returns only
+                companies they belong to (else the page shows "not found"), and
+                brand actions inside are gated by ownership + brand permission. */}
+            <Route
+              path="/product/companies/:slug"
+              element={<CompanyDetail />}
+            />
+            <Route element={<RequireCan resource="users" action="view" />}>
+              <Route path="/users" element={<Users />} />
+            </Route>
+
+            {/* Admin-only: attributes and role/permission management. */}
             <Route element={<RequireAdmin />}>
               <Route path="/product/attributes" element={<Attributes />} />
-              <Route path="/product/categories" element={<Categories />} />
-              <Route path="/product/brands" element={<Brands />} />
-              <Route path="/product/companies" element={<Companies />} />
-              <Route path="/users" element={<Users />} />
+              <Route path="/roles" element={<Roles />} />
+            </Route>
+
+            {/* Approvals: admins and staff with the approval permission. */}
+            <Route element={<RequireCan resource="approval" action="approve" />}>
+              <Route path="/approvals" element={<Approvals />} />
+              <Route path="/approvals/:slug" element={<ApprovalReview />} />
             </Route>
 
             <Route path="/product/:slug" element={<ProductDetail />} />
