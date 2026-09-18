@@ -36,8 +36,8 @@ const corsHeaders = {
 };
 
 type Action =
-  | { type: "create"; email: string; password?: string; full_name?: string; role?: string }
-  | { type: "invite"; email: string; role?: string; full_name?: string; redirect_to?: string }
+  | { type: "create"; email: string; password?: string; full_name?: string; role?: string; role_id?: string; company_id?: string }
+  | { type: "invite"; email: string; role?: string; full_name?: string; role_id?: string; company_id?: string; redirect_to?: string }
   | { type: "delete"; user_id: string }
   | { type: "setRole"; user_id: string; role: "admin" | "staff" | "supplier" | "customer" }
   | { type: "setBanned"; user_id: string; banned: boolean };
@@ -116,6 +116,8 @@ Deno.serve(async (req) => {
         await applyProfile(admin, data.user!.id, {
           full_name: action.full_name,
           role: action.role,
+          role_id: action.role_id,
+          company_id: action.company_id,
         });
         return json({ ok: true, user_id: data.user!.id });
       }
@@ -135,6 +137,8 @@ Deno.serve(async (req) => {
         await applyProfile(admin, data.user!.id, {
           full_name: action.full_name,
           role: action.role,
+          role_id: action.role_id,
+          company_id: action.company_id,
         });
         return json({ ok: true, user_id: data.user!.id });
       }
@@ -191,12 +195,19 @@ Deno.serve(async (req) => {
 async function applyProfile(
   admin: ReturnType<typeof createClient>,
   userId: string,
-  fields: { full_name?: string | null; role?: string }
+  fields: {
+    full_name?: string | null;
+    role?: string;
+    role_id?: string;
+    company_id?: string;
+  }
 ) {
   const patch: Record<string, unknown> = {};
   if (fields.full_name !== undefined) patch.full_name = fields.full_name;
   if (fields.role && ROLES.includes(fields.role as (typeof ROLES)[number]))
     patch.role = fields.role;
+  if (fields.role_id) patch.role_id = fields.role_id;
+  if (fields.company_id) patch.company_id = fields.company_id;
   if (Object.keys(patch).length === 0) return;
 
   // Row may not exist yet if no signup trigger — upsert to be safe.

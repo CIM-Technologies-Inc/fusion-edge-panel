@@ -7,7 +7,7 @@ import { useAuth } from "../../context/AuthContext";
  * an access notice; signed-out users go to sign-in.
  */
 export default function RequireProductManager() {
-  const { session, isAdmin, isSupplier, loading } = useAuth();
+  const { session, isAdmin, can, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -22,7 +22,7 @@ export default function RequireProductManager() {
     return <Navigate to="/signin" replace state={{ from: location.pathname }} />;
   }
 
-  if (!isAdmin && !isSupplier) {
+  if (!isAdmin && !can("product", "view")) {
     return (
       <div className="p-6 text-center border border-gray-200 rounded-2xl bg-white dark:border-gray-800 dark:bg-white/[0.03]">
         <h4 className="mb-1 font-medium text-gray-800 dark:text-white/90">

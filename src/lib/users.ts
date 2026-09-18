@@ -10,6 +10,10 @@ export type AdminUser = {
   avatar_url: string | null;
   role: UserRole;
   is_admin: boolean;
+  /** Assigned permission-role id (new system), or null. */
+  role_id: string | null;
+  /** Assigned company id, or null. */
+  company_id: string | null;
   banned_at: string | null;
   created_at: string;
   last_sign_in_at: string | null;
@@ -33,7 +37,7 @@ export async function listUsers(): Promise<{
   const { data, error } = await supabase
     .from("admin_users")
     .select(
-      "id, email, full_name, avatar_url, role, is_admin, banned_at, created_at, last_sign_in_at"
+      "id, email, full_name, avatar_url, role, is_admin, role_id, company_id, banned_at, created_at, last_sign_in_at"
     )
     .order("created_at", { ascending: false });
   if (error) return { users: [], error: error.message };
@@ -56,6 +60,33 @@ export async function updateUserProfile(
   return { error: error?.message ?? null };
 }
 
+/**
+ * Assign a permission-role (role_id) to a user. The privilege guard allows this
+ * from an admin's own session, so no Edge Function is needed.
+ */
+export async function setUserRoleId(
+  userId: string,
+  roleId: string | null
+): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from("profiles")
+    .update({ role_id: roleId })
+    .eq("id", userId);
+  return { error: error?.message ?? null };
+}
+
+/** Assign a company (company_id) to a user. Admin session satisfies the guard. */
+export async function setUserCompany(
+  userId: string,
+  companyId: string | null
+): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from("profiles")
+    .update({ company_id: companyId })
+    .eq("id", userId);
+  return { error: error?.message ?? null };
+}
+
 // ---------------------------------------------------------------------------
 // Privileged actions — routed through the admin-users Edge Function because
 // they need the service-role key (create/invite/delete) or are frozen against
@@ -63,11 +94,36 @@ export async function updateUserProfile(
 // ---------------------------------------------------------------------------
 
 type AdminAction =
-  | { type: "create"; email: string; password?: string; full_name?: string; role?: UserRole }
-  | { type: "invite"; email: string; role?: UserRole; full_name?: string; redirect_to?: string }
+  | {
+      type: "create";
+      email: string;
+      password?: string;
+      full_name?: string;
+      role?: UserRole;
+      role_id?: string;
+      company_id?: string;
+    }
+  | {
+      type: "invite";
+      email: string;
+      role?: UserRole;
+      full_name?: string;
+      role_id?: string;
+      company_id?: string;
+      redirect_to?: string;
+    }
   | { type: "delete"; user_id: string }
   | { type: "setRole"; user_id: string; role: UserRole }
   | { type: "setBanned"; user_id: string; banned: boolean };
+
+/** Options for creating/inviting a user. */
+export type NewUserOpts = {
+  password?: string;
+  full_name?: string;
+  role?: UserRole;
+  role_id?: string;
+  company_id?: string;
+};
 
 async function callAdmin(
   action: AdminAction
@@ -92,26 +148,33 @@ async function callAdmin(
   return { data, error: null };
 }
 
-export const createUser = (
-  email: string,
-  opts: { password?: string; full_name?: string; role?: UserRole } = {}
-) => callAdmin({ type: "create", email, ...opts });
+export const createUser = (email: string, opts: NewUserOpts = {}) =>
+  callAdmin({ type: "create", email, ...opts });
 
-export const inviteUser = (
-  email: string,
-  role?: UserRole,
-  full_name?: string
-) =>
+/**
+ * Base URL for auth redirect links (invite / set-password).
+ *
+ * Prefers VITE_PUBLIC_SITE_URL (set this in Vercel to the production URL) so the
+ * invite always points at the deployed site regardless of where it's sent from;
+ * falls back to the current origin for local dev.
+ */
+function siteUrl(): string {
+  const configured = import.meta.env.VITE_PUBLIC_SITE_URL as string | undefined;
+  if (configured) return configured.replace(/\/$/, "");
+  if (typeof window !== "undefined") return window.location.origin;
+  return "";
+}
+
+export const inviteUser = (email: string, opts: NewUserOpts = {}) =>
   callAdmin({
     type: "invite",
     email,
-    role,
-    full_name,
-    // Send the invite link to this app's set-password page.
-    redirect_to:
-      typeof window !== "undefined"
-        ? `${window.location.origin}/set-password`
-        : undefined,
+    role: opts.role,
+    full_name: opts.full_name,
+    role_id: opts.role_id,
+    company_id: opts.company_id,
+    // Send the invite link to the app's set-password page.
+    redirect_to: `${siteUrl()}/set-password`,
   });
 
 export const deleteUser = (userId: string) =>

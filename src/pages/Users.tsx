@@ -7,16 +7,18 @@ import Badge from "../components/ui/badge/Badge";
 import { Modal } from "../components/ui/modal";
 import { ListToolbar, Pager } from "../components/common/ListControls";
 import { useUsers } from "../hooks/useUsers";
+import { useRoles } from "../hooks/useRoles";
+import { useCompanies } from "../hooks/useCompanies";
 import { useTableControls } from "../hooks/useTableControls";
 import { useToast } from "../context/ToastContext";
 import { useAuth } from "../context/AuthContext";
 import {
-  ROLE_LABEL,
   createUser,
   deleteUser,
   inviteUser,
   setUserBanned,
-  setUserRole,
+  setUserCompany,
+  setUserRoleId,
   updateUserProfile,
   type AdminUser,
   type UserRole,
@@ -26,10 +28,6 @@ const shell =
   "rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/[0.03]";
 const inputClass =
   "h-11 rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90";
-
-// Roles an admin can assign from the UI. "customer" (default signup role) and
-// "staff" are intentionally omitted.
-const ROLES: UserRole[] = ["admin", "supplier"];
 
 function fmtDate(iso: string | null) {
   if (!iso) return "—";
@@ -42,7 +40,9 @@ function fmtDate(iso: string | null) {
 
 export default function Users() {
   const { users, loading, error, reload } = useUsers();
-  const { session } = useAuth();
+  const { roles, roleHasResource } = useRoles();
+  const { companies } = useCompanies();
+  const { session, isAdmin } = useAuth();
   const { notify } = useToast();
   const myId = session?.user?.id;
 
@@ -53,11 +53,33 @@ export default function Users() {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [newRole, setNewRole] = useState<UserRole>("supplier");
+  // New permission-based role + company assignment.
+  const [newRoleId, setNewRoleId] = useState("");
+  const [newCompanyId, setNewCompanyId] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // Edit-name modal.
+  // A company can be assigned to a user ONLY when their role is a "company
+  // role" (roles.is_company). A role that manages companies (has the company
+  // permission) is never tied to one, so it's excluded even if flagged.
+  const isCompanyRole = (roleId: string) =>
+    !!roleId &&
+    (roles.find((r) => r.id === roleId)?.is_company ?? false) &&
+    !roleHasResource(roleId, "company");
+
+  // If the chosen role can manage companies, the user isn't tied to one company
+  // — so don't let the admin pick a company for them.
+  const roleManagesCompany =
+    !!newRoleId && roleHasResource(newRoleId, "company");
+  const newCanAssignCompany = isCompanyRole(newRoleId);
+
+  // Edit-user modal (name + role + company).
   const [editUser, setEditUser] = useState<AdminUser | null>(null);
   const [editName, setEditName] = useState("");
+  const [editRoleId, setEditRoleId] = useState("");
+  const [editCompanyId, setEditCompanyId] = useState("");
+  const editRoleManagesCompany =
+    !!editRoleId && roleHasResource(editRoleId, "company");
+  const editCanAssignCompany = isCompanyRole(editRoleId);
 
   // Row-level "busy" so buttons disable while their action runs.
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -80,6 +102,8 @@ export default function Users() {
     setPassword("");
     setFullName("");
     setNewRole("supplier");
+    setNewRoleId("");
+    setNewCompanyId("");
     setMode("invite");
   };
 
@@ -92,15 +116,28 @@ export default function Users() {
       notify("error", "Weak password", "Use at least 6 characters.");
       return;
     }
+    // A company can only be assigned to a company role.
+    if (newCompanyId && !newCanAssignCompany) {
+      notify(
+        "error",
+        "Can't assign a company",
+        roleManagesCompany
+          ? "This role manages companies, so it can't be tied to one."
+          : "Only a company role can be assigned to a company."
+      );
+      return;
+    }
     setSaving(true);
+    const opts = {
+      full_name: fullName.trim() || undefined,
+      role_id: newRoleId || undefined,
+      // Only a company role carries a company.
+      company_id: newCanAssignCompany ? newCompanyId || undefined : undefined,
+    };
     const { error } =
       mode === "invite"
-        ? await inviteUser(email.trim(), newRole, fullName.trim() || undefined)
-        : await createUser(email.trim(), {
-            password,
-            full_name: fullName.trim() || undefined,
-            role: newRole,
-          });
+        ? await inviteUser(email.trim(), { ...opts })
+        : await createUser(email.trim(), { password, role: newRole, ...opts });
     setSaving(false);
     if (error) {
       notify("error", "Could not add user", error);
@@ -113,16 +150,6 @@ export default function Users() {
     );
     setAddOpen(false);
     resetAdd();
-    reload();
-  };
-
-  const handleRole = async (u: AdminUser, role: UserRole) => {
-    if (role === u.role) return;
-    setBusyId(u.id);
-    const { error } = await setUserRole(u.id, role);
-    setBusyId(null);
-    if (error) return notify("error", "Could not change role", error);
-    notify("success", "Role updated", `${u.email ?? "User"} → ${ROLE_LABEL[role]}`);
     reload();
   };
 
@@ -161,11 +188,35 @@ export default function Users() {
 
   const handleSaveName = async () => {
     if (!editUser) return;
+
+    // A company can only be tied to a company role; otherwise it's cleared.
+    const canAssign = editCanAssignCompany;
+    const companyValue = canAssign ? editCompanyId || null : null;
+
+    // 1) Name.
     const { error } = await updateUserProfile(editUser.id, {
       full_name: editName.trim() || null,
     });
     if (error) return notify("error", "Could not update", error);
-    notify("success", "Profile updated", editUser.email ?? "");
+
+    // 2) Role (if changed) — clear the company first if the new role can't hold
+    //    one, so the guard trigger never sees an invalid role+company pair.
+    if ((editRoleId || null) !== editUser.role_id) {
+      if (!canAssign && editUser.company_id) {
+        const c = await setUserCompany(editUser.id, null);
+        if (c.error) return notify("error", "Could not clear company", c.error);
+      }
+      const r = await setUserRoleId(editUser.id, editRoleId || null);
+      if (r.error) return notify("error", "Could not change role", r.error);
+    }
+
+    // 3) Company (only for a company role, and only if it changed).
+    if (canAssign && companyValue !== editUser.company_id) {
+      const c = await setUserCompany(editUser.id, companyValue);
+      if (c.error) return notify("error", "Could not change company", c.error);
+    }
+
+    notify("success", "User updated", editUser.email ?? "");
     setEditUser(null);
     reload();
   };
@@ -177,16 +228,18 @@ export default function Users() {
 
       <div className="space-y-6">
         <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={() => {
-              resetAdd();
-              setAddOpen(true);
-            }}
-            className="inline-flex items-center h-11 px-4 text-sm font-medium text-white rounded-lg bg-brand-500 hover:bg-brand-600"
-          >
-            + Add user
-          </button>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => {
+                resetAdd();
+                setAddOpen(true);
+              }}
+              className="inline-flex items-center h-11 px-4 text-sm font-medium text-white rounded-lg bg-brand-500 hover:bg-brand-600"
+            >
+              + Add user
+            </button>
+          )}
         </div>
 
         {error && (
@@ -237,6 +290,7 @@ export default function Users() {
                   <tr className="text-left text-gray-500 border-b border-gray-100 dark:border-gray-800 dark:text-gray-400">
                     <th className="px-5 py-3 font-medium">User</th>
                     <th className="px-5 py-3 font-medium">Role</th>
+                    <th className="px-5 py-3 font-medium">Company</th>
                     <th className="px-5 py-3 font-medium">Status</th>
                     <th className="px-5 py-3 font-medium">Joined</th>
                     <th className="px-5 py-3 font-medium text-right">Actions</th>
@@ -281,32 +335,14 @@ export default function Users() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-5 py-3">
-                          <select
-                            value={u.role}
-                            disabled={busy || (isSelf && u.role === "admin")}
-                            onChange={(e) =>
-                              handleRole(u, e.target.value as UserRole)
-                            }
-                            className={`${inputClass} h-9 disabled:opacity-50`}
-                            title={
-                              isSelf && u.role === "admin"
-                                ? "You can't remove your own admin role"
-                                : undefined
-                            }
-                          >
-                            {/* Include the user's current role even if it's
-                                not assignable (e.g. customer), so the row shows
-                                it and can be promoted. */}
-                            {(ROLES.includes(u.role)
-                              ? ROLES
-                              : [u.role, ...ROLES]
-                            ).map((r) => (
-                              <option key={r} value={r}>
-                                {ROLE_LABEL[r]}
-                              </option>
-                            ))}
-                          </select>
+                        <td className="px-5 py-3 text-gray-700 dark:text-gray-300">
+                          {roles.find((r) => r.id === u.role_id)?.name ?? "—"}
+                        </td>
+                        <td className="px-5 py-3 text-gray-700 dark:text-gray-300">
+                          {u.role_id && roleHasResource(u.role_id, "company")
+                            ? "n/a"
+                            : companies.find((c) => c.id === u.company_id)?.name ??
+                              "—"}
                         </td>
                         <td className="px-5 py-3">
                           {u.banned_at ? (
@@ -323,12 +359,21 @@ export default function Users() {
                           {fmtDate(u.created_at)}
                         </td>
                         <td className="px-5 py-3">
+                          {/* User management is admin-only; staff see the list
+                              read-only. */}
+                          {!isAdmin ? (
+                            <span className="block text-right text-theme-xs text-gray-300 dark:text-gray-600">
+                              —
+                            </span>
+                          ) : (
                           <div className="flex items-center justify-end gap-3">
                             <button
                               type="button"
                               onClick={() => {
                                 setEditUser(u);
                                 setEditName(u.full_name ?? "");
+                                setEditRoleId(u.role_id ?? "");
+                                setEditCompanyId(u.company_id ?? "");
                               }}
                               className="text-gray-500 hover:text-brand-500"
                             >
@@ -361,6 +406,7 @@ export default function Users() {
                               </>
                             )}
                           </div>
+                          )}
                         </td>
                       </tr>
                     );
@@ -449,17 +495,49 @@ export default function Users() {
           <div>
             <Label>Role</Label>
             <select
-              value={newRole}
-              onChange={(e) => setNewRole(e.target.value as UserRole)}
+              value={newRoleId}
+              onChange={(e) => {
+                const rid = e.target.value;
+                setNewRoleId(rid);
+                // Company can only be set for a company role — clear otherwise.
+                if (!isCompanyRole(rid)) setNewCompanyId("");
+              }}
               className={`${inputClass} w-full`}
             >
-              {ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {ROLE_LABEL[r]}
+              <option value="">No role</option>
+              {roles.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
                 </option>
               ))}
             </select>
           </div>
+          {newCanAssignCompany ? (
+            <div>
+              <Label>Company</Label>
+              <select
+                value={newCompanyId}
+                onChange={(e) => setNewCompanyId(e.target.value)}
+                className={`${inputClass} w-full`}
+              >
+                <option value="">No company</option>
+                {companies.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-theme-xs text-gray-400">
+                Scopes their data to that company.
+              </p>
+            </div>
+          ) : (
+            <p className="text-theme-xs text-gray-400">
+              {roleManagesCompany
+                ? "This role manages companies, so it isn't tied to one."
+                : "Only a company role can be assigned to a company. Mark the role “For company users” to enable this."}
+            </p>
+          )}
         </div>
 
         <div className="flex justify-end gap-3 mt-6">
@@ -503,6 +581,55 @@ export default function Users() {
                 onChange={(e) => setEditName(e.target.value)}
               />
             </div>
+            <div>
+              <Label>Role</Label>
+              <select
+                value={editRoleId}
+                disabled={editUser.id === myId && editUser.is_admin}
+                onChange={(e) => {
+                  const rid = e.target.value;
+                  setEditRoleId(rid);
+                  // Company can only be set for a company role — clear otherwise.
+                  if (!isCompanyRole(rid)) setEditCompanyId("");
+                }}
+                className={`${inputClass} w-full disabled:opacity-50`}
+                title={
+                  editUser.id === myId && editUser.is_admin
+                    ? "You can't change your own role"
+                    : undefined
+                }
+              >
+                <option value="">No role</option>
+                {roles.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {editCanAssignCompany ? (
+              <div>
+                <Label>Company</Label>
+                <select
+                  value={editCompanyId}
+                  onChange={(e) => setEditCompanyId(e.target.value)}
+                  className={`${inputClass} w-full`}
+                >
+                  <option value="">No company</option>
+                  {companies.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <p className="text-theme-xs text-gray-400">
+                {editRoleManagesCompany
+                  ? "This role manages companies, so it isn't tied to one."
+                  : "Only a company role can be assigned to a company. Mark the role “For company users” to enable this."}
+              </p>
+            )}
           </div>
         )}
         <div className="flex justify-end gap-3 mt-6">
