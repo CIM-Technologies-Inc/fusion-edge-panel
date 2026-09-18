@@ -107,6 +107,7 @@ export default function VariationBuilder({
         price: "",
         sale_price: "",
         sku: "",
+        quantity: "0",
         in_stock: true,
         image_url: "",
         position: value.length + n,
@@ -139,6 +140,7 @@ export default function VariationBuilder({
         price: "",
         sale_price: "",
         sku: "",
+        quantity: "0",
         in_stock: true,
         image_url: "",
         position: value.length,
@@ -290,15 +292,20 @@ export default function VariationBuilder({
               </div>
 
               <div className="flex flex-wrap items-center gap-4 mt-3">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={d.in_stock}
-                    onChange={(e) => patch(i, { in_stock: e.target.checked })}
-                    className="w-4 h-4 rounded accent-brand-500"
-                  />
+                <label className="flex items-center gap-2">
                   <span className="text-sm text-gray-600 dark:text-gray-300">
-                    In stock
+                    Qty
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step={1}
+                    value={d.quantity}
+                    onChange={(e) => patch(i, { quantity: e.target.value })}
+                    className="h-9 w-24 rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 dark:border-gray-700 dark:text-white/90"
+                  />
+                  <span className="text-theme-xs text-gray-400">
+                    {Number(d.quantity) > 0 ? "in stock" : "out of stock"}
                   </span>
                 </label>
 

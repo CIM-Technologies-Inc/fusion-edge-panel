@@ -122,7 +122,7 @@ function RecentProducts({ products }: { products: Product[] }) {
 export default function CatalogueDashboard() {
   const { products: allProducts, loading: productsLoading } = useProducts();
   const { stats } = useDashboardStats();
-  const { isSupplier, session } = useAuth();
+  const { isAdmin, isSupplier, companyId } = useAuth();
   const { start: startTour } = useTour();
 
   // Auto-start the walkthrough once, ever, for a new supplier (per-user flag).
@@ -140,14 +140,13 @@ export default function CatalogueDashboard() {
     };
   }, [isSupplier, startTour]);
 
-  // Suppliers see only their own products in every dashboard number.
-  const products = useMemo(
-    () =>
-      isSupplier && session?.user
-        ? allProducts.filter((p) => p.supplier_id === session.user.id)
-        : allProducts,
-    [allProducts, isSupplier, session]
-  );
+  // Non-admins see only their own company's products in every dashboard
+  // number. A non-admin with no company sees none. Admins see everything.
+  const products = useMemo(() => {
+    // Admins and no-company staff see all; a user with a company is scoped.
+    if (isAdmin || !companyId) return allProducts;
+    return allProducts.filter((p) => p.company_id === companyId);
+  }, [allProducts, isAdmin, companyId]);
 
   // Everything derived from the product list, computed once.
   const derived = useMemo(() => {

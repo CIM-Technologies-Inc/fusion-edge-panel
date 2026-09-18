@@ -19,6 +19,8 @@ export type VariationDraft = {
   price: string;
   sale_price: string;
   sku: string;
+  /** Inventory count (as a string for the input); in_stock derives from it. */
+  quantity: string;
   in_stock: boolean;
   image_url: string;
   position: number;
@@ -123,7 +125,7 @@ export async function saveVariations(
     sale_price_cents: d.sale_price.trim()
       ? Math.round(Number(d.sale_price) * 100)
       : null,
-    in_stock: d.in_stock,
+    quantity: Math.max(0, Math.floor(Number(d.quantity) || 0)),
     position,
   }));
 

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import Label from "../form/Label";
-import Input from "../form/input/InputField";
 
 /** An <img> that reports a broken URL instead of showing a dead icon. */
 function SafeImage({ url, alt }: { url: string; alt: string }) {
@@ -25,7 +24,6 @@ function SafeImage({ url, alt }: { url: string; alt: string }) {
 type Props = {
   /** Raw URL strings from the form, may include blanks. */
   urls: string[];
-  onChangeAt: (index: number, value: string) => void;
   onAdd: () => void;
   onRemove: (index: number) => void;
   /** Opens the media library for a given row. */
@@ -43,7 +41,6 @@ type Props = {
  *  and the URL fields — all in one card. */
 export default function ImagePreview({
   urls,
-  onChangeAt,
   onAdd,
   onRemove,
   onChoose,
@@ -130,11 +127,9 @@ export default function ImagePreview({
               <span className="text-sm text-gray-400">
                 {onDropFiles ? "Drop an image here" : "No image yet"}
               </span>
-              {onDropFiles && (
-                <span className="text-theme-xs text-gray-400">
-                  or use the URL field below
-                </span>
-              )}
+              <span className="text-theme-xs text-gray-400">
+                or use “Choose” below
+              </span>
             </>
           )}
         </div>
@@ -199,35 +194,47 @@ export default function ImagePreview({
         </>
       )}
 
-      {/* URL fields, one per image slot. */}
+      {/* One row per image slot — pick from the media library (no URL typing). */}
       <div className="space-y-2">
-        {urls.map((url, i) => (
-          <div key={i} className="flex gap-2">
-            <Input
-              value={url}
-              placeholder={i === 0 ? "Main image URL" : "Image URL"}
-              error={!!error}
-              onChange={(e) => onChangeAt(i, e.target.value)}
-            />
-            <button
-              type="button"
-              onClick={() => onChoose(i)}
-              className="h-11 shrink-0 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
-            >
-              Choose
-            </button>
-            <button
-              type="button"
-              onClick={() => onRemove(i)}
-              disabled={urls.length === 1}
-              aria-label={`Remove image row ${i + 1}`}
-              title="Remove this image"
-              className="h-11 shrink-0 rounded-lg border border-gray-300 px-3 text-sm text-gray-500 hover:border-error-500 hover:text-error-500 disabled:opacity-40 disabled:hover:border-gray-300 disabled:hover:text-gray-500 dark:border-gray-700 dark:text-gray-400"
-            >
-              ×
-            </button>
-          </div>
-        ))}
+        {urls.map((url, i) => {
+          const has = url.trim() !== "";
+          return (
+            <div key={i} className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => onChoose(i)}
+                className={`flex h-11 flex-1 items-center gap-2 rounded-lg border px-3 text-sm font-medium transition ${
+                  error && !has
+                    ? "border-error-500 text-error-500"
+                    : "border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+                }`}
+              >
+                {has ? (
+                  <>
+                    <span className="h-6 w-6 shrink-0 overflow-hidden rounded bg-gray-100 dark:bg-white/[0.06]">
+                      <SafeImage url={url} alt="" />
+                    </span>
+                    <span className="truncate">Change image</span>
+                  </>
+                ) : (
+                  <span className="text-gray-500 dark:text-gray-400">
+                    {i === 0 ? "Choose main image…" : "Choose image…"}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => onRemove(i)}
+                disabled={urls.length === 1}
+                aria-label={`Remove image row ${i + 1}`}
+                title="Remove this image"
+                className="h-11 shrink-0 rounded-lg border border-gray-300 px-3 text-sm text-gray-500 hover:border-error-500 hover:text-error-500 disabled:opacity-40 disabled:hover:border-gray-300 disabled:hover:text-gray-500 dark:border-gray-700 dark:text-gray-400"
+              >
+                ×
+              </button>
+            </div>
+          );
+        })}
       </div>
 
       <button

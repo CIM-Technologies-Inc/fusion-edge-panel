@@ -12,11 +12,12 @@ const BRAND_SELECT = `
 const buildSelect = (
   withBrand: boolean,
   withModel: boolean,
-  withMeta: boolean
+  withMeta: boolean,
+  withApproval: boolean
 ) => `
   id, name, slug, sku, kind, description, short_description,
   price_cents, sale_price_cents, price_max_cents,
-  in_stock, featured, published, created_at,
+  in_stock, quantity, featured, published, ${withApproval ? "approval_status, rejection_reason," : ""} created_at,
   ${withModel ? "model_3d_url, supplier_id," : ""}
   category:categories ( id, name, slug ),
   ${withBrand ? BRAND_SELECT : ""}
@@ -30,7 +31,7 @@ const buildSelect = (
     )
   ),
   variations (
-    id, sku, price_cents, sale_price_cents, in_stock, position,
+    id, sku, price_cents, sale_price_cents, quantity, in_stock, position,
     variation_terms ( attribute_id, term_id )${
       withMeta
         ? `,
@@ -87,20 +88,21 @@ export function useProduct(slug: string | undefined) {
     // Prefer the full query; progressively drop the brand/company relations
     // (need 0005/0007) and the model_3d_url column (needs 0008) until it works,
     // so a not-yet-run migration never breaks the whole product page.
-    const attempts: [boolean, boolean, boolean][] = [
-      [true, true, true],
-      [true, true, false],
-      [true, false, false],
-      [false, true, false],
-      [false, false, false],
+    const attempts: [boolean, boolean, boolean, boolean][] = [
+      [true, true, true, true],
+      [true, true, true, false],
+      [true, true, false, false],
+      [true, false, false, false],
+      [false, true, false, false],
+      [false, false, false, false],
     ];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let data: any = null;
     let error: { message: string } | null = null;
-    for (const [withBrand, withModel, withMeta] of attempts) {
+    for (const [withBrand, withModel, withMeta, withApproval] of attempts) {
       const res = await supabase
         .from("products")
-        .select(buildSelect(withBrand, withModel, withMeta))
+        .select(buildSelect(withBrand, withModel, withMeta, withApproval))
         .eq("slug", slug)
         .maybeSingle();
       data = res.data;
@@ -108,7 +110,9 @@ export function useProduct(slug: string | undefined) {
       // Stop once it succeeds, or on an error that isn't about these columns.
       if (
         !error ||
-        !/brand|compan|model_3d|supplier|variation_meta/i.test(error.message)
+        !/brand|compan|model_3d|supplier|variation_meta|approval_status/i.test(
+          error.message
+        )
       )
         break;
     }

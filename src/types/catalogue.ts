@@ -35,10 +35,14 @@ export type BrandFull = Brand & {
   description: string | null;
   logo_url: string | null;
   position: number;
+  /** Owning company. NULL = a global brand (visible to everyone). */
+  company_id?: string | null;
   /** Company ids this brand belongs to (many-to-many). */
   company_ids?: string[];
   /** Number of products with this brand — filled in by the admin query. */
   product_count?: number;
+  created_at?: string | null;
+  updated_at?: string | null;
 };
 
 export type Company = {
@@ -113,6 +117,7 @@ export type Variation = {
   sku: string | null;
   price_cents: number;
   sale_price_cents: number | null;
+  quantity?: number;
   in_stock: boolean;
   position: number;
   terms: { attribute_id: string; term_id: string }[];
@@ -133,13 +138,21 @@ export type Product = {
   /** Integer cents. Set by trigger on variable products only. */
   price_max_cents: number | null;
   in_stock: boolean;
+  /** Inventory count (drives in_stock). Simple products & variations carry it. */
+  quantity?: number;
   featured: boolean;
   published: boolean;
+  /** draft | pending | approved | rejected — 'pending' awaits admin approval. */
+  approval_status?: string;
+  /** Reason an admin gave when rejecting; shown to the company-user. */
+  rejection_reason?: string | null;
   created_at: string;
   /** Optional URL to a glTF/GLB 3D model. */
   model_3d_url: string | null;
   /** Owning supplier's profile id, or null (admin-managed). */
   supplier_id: string | null;
+  /** Owning company id (for scoping); the `company` object may not be loaded. */
+  company_id: string | null;
   category: Category | null;
   brand: Brand | null;
   company: Company | null;

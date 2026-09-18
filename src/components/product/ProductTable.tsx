@@ -33,6 +33,8 @@ function Thumb({ product }: { product: Product }) {
 
 type Props = {
   products: Product[];
+  /** Whether the Edit link is shown. */
+  canEdit?: boolean;
   /** Managers get row actions (edit/duplicate/delete); omit for read-only. */
   onDuplicate?: (product: Product) => void;
   onDelete?: (product: Product) => void;
@@ -42,12 +44,13 @@ type Props = {
 
 export default function ProductTable({
   products,
+  canEdit,
   onDuplicate,
   onDelete,
   duplicatingId,
   deletingId,
 }: Props) {
-  const showActions = !!onDuplicate || !!onDelete;
+  const showActions = !!canEdit || !!onDuplicate || !!onDelete;
   const headers = ["Product", "SKU", "Category", "Type", "Price", "Status"];
   if (showActions) headers.push("Actions");
 
@@ -79,7 +82,18 @@ export default function ProductTable({
                   >
                     <Thumb product={product} />
                     <div>
-                      <span className="block font-medium text-gray-800 text-theme-sm group-hover:text-brand-500 dark:text-white/90">
+                      <span className="flex items-center gap-1.5 font-medium text-gray-800 text-theme-sm group-hover:text-brand-500 dark:text-white/90">
+                        {product.featured && (
+                          <svg
+                            className="w-4 h-4 shrink-0 text-warning-400"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            aria-label="Featured"
+                          >
+                            <title>Featured</title>
+                            <path d="M12 2.5l2.9 5.88 6.49.94-4.7 4.58 1.11 6.46L12 17.77l-5.8 3.05 1.11-6.46-4.7-4.58 6.49-.94L12 2.5z" />
+                          </svg>
+                        )}
                         {product.name}
                       </span>
                       <span className="block text-gray-500 text-theme-xs dark:text-gray-400">
@@ -119,9 +133,22 @@ export default function ProductTable({
 
                 <TableCell className="px-5 py-4 text-start">
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <Badge size="sm" color={product.published ? "success" : "warning"}>
-                      {product.published ? "Published" : "Draft"}
-                    </Badge>
+                    {product.approval_status === "pending" ? (
+                      <Badge size="sm" color="warning">
+                        Pending approval
+                      </Badge>
+                    ) : product.approval_status === "rejected" ? (
+                      <Badge size="sm" color="error">
+                        Rejected
+                      </Badge>
+                    ) : (
+                      <Badge
+                        size="sm"
+                        color={product.published ? "success" : "warning"}
+                      >
+                        {product.published ? "Published" : "Draft"}
+                      </Badge>
+                    )}
                     <Badge size="sm" color={product.in_stock ? "success" : "error"}>
                       {product.in_stock ? "In stock" : "Out of stock"}
                     </Badge>
@@ -130,44 +157,44 @@ export default function ProductTable({
 
                 {showActions && (
                   <TableCell className="px-5 py-4 text-start">
-                    <div className="flex items-center gap-2">
-                      <Link
-                        to={`/product/${product.slug}/edit`}
-                        className="text-gray-500 hover:text-brand-500 text-theme-sm"
-                      >
-                        Edit
-                      </Link>
+                    <div className="flex items-center gap-3">
+                      {canEdit && (
+                        <Link
+                          to={`/product/${product.slug}/edit`}
+                          className="text-gray-500 hover:text-brand-500 text-theme-sm"
+                        >
+                          Edit
+                        </Link>
+                      )}
                       {onDuplicate && (
-                        <>
-                          <span className="text-gray-300 dark:text-gray-700">
-                            |
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => onDuplicate(product)}
-                            disabled={duplicatingId === product.id}
-                            className="text-gray-500 hover:text-brand-500 text-theme-sm disabled:opacity-50"
-                          >
-                            {duplicatingId === product.id
-                              ? "Duplicating…"
-                              : "Duplicate"}
-                          </button>
-                        </>
+                        <button
+                          type="button"
+                          onClick={() => onDuplicate(product)}
+                          disabled={
+                            duplicatingId === product.id ||
+                            product.approval_status === "pending"
+                          }
+                          title={
+                            product.approval_status === "pending"
+                              ? "Can't duplicate a product that's pending approval"
+                              : undefined
+                          }
+                          className="text-gray-500 hover:text-brand-500 text-theme-sm disabled:opacity-50 disabled:hover:text-gray-500"
+                        >
+                          {duplicatingId === product.id
+                            ? "Duplicating…"
+                            : "Duplicate"}
+                        </button>
                       )}
                       {onDelete && (
-                        <>
-                          <span className="text-gray-300 dark:text-gray-700">
-                            |
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => onDelete(product)}
-                            disabled={deletingId === product.id}
-                            className="text-gray-400 hover:text-error-500 text-theme-sm disabled:opacity-50"
-                          >
-                            {deletingId === product.id ? "Deleting…" : "Delete"}
-                          </button>
-                        </>
+                        <button
+                          type="button"
+                          onClick={() => onDelete(product)}
+                          disabled={deletingId === product.id}
+                          className="text-gray-400 hover:text-error-500 text-theme-sm disabled:opacity-50"
+                        >
+                          {deletingId === product.id ? "Deleting…" : "Delete"}
+                        </button>
                       )}
                     </div>
                   </TableCell>

@@ -20,6 +20,8 @@ export type ProductEdit = {
   /** null for variable products — the trigger maintains their price. */
   price_cents: number | null;
   sale_price_cents: number | null;
+  /** Inventory count. in_stock is derived from this (quantity > 0). */
+  quantity: number;
   in_stock: boolean;
   featured: boolean;
   published: boolean;
@@ -240,24 +242,47 @@ function uniqueSlug(base: string, taken: Set<string>): string {
 export async function duplicateProduct(
   productId: string
 ): Promise<{ error: string | null; slug: string | null }> {
-  // 1. Read the source in full.
-  const { data: src, error: readErr } = await supabase
+  // 1. Read the source in full. approval_status is included when present
+  //    (migration 0027); retry without it on older schemas.
+  const srcSelect = (withApproval: boolean) =>
+    `id, name, slug, kind, category_id, brand_id, company_id, model_3d_url, supplier_id,
+     ${withApproval ? "approval_status," : ""}
+     short_description, description,
+     price_cents, sale_price_cents, quantity, in_stock, featured,
+     product_images ( url, alt, position, variation_id ),
+     product_attributes ( attribute_id, used_for_variations, position,
+       product_attribute_terms ( term_id, position ) ),
+     variations ( id, price_cents, sale_price_cents, quantity, in_stock, position,
+       variation_terms ( attribute_id, term_id ) )`;
+
+  let read = await supabase
     .from("products")
-    .select(
-      `id, name, slug, kind, category_id, brand_id, company_id, model_3d_url, supplier_id,
-       short_description, description,
-       price_cents, sale_price_cents, in_stock, featured,
-       product_images ( url, alt, position, variation_id ),
-       product_attributes ( attribute_id, used_for_variations, position,
-         product_attribute_terms ( term_id, position ) ),
-       variations ( id, price_cents, sale_price_cents, in_stock, position,
-         variation_terms ( attribute_id, term_id ) )`
-    )
+    .select(srcSelect(true))
     .eq("id", productId)
     .single();
+  if (read.error && /approval_status/i.test(read.error.message)) {
+    read = await supabase
+      .from("products")
+      .select(srcSelect(false))
+      .eq("id", productId)
+      .single();
+  }
+  const readErr = read.error;
+  // The two select variants give a union type; the shape is the same, so treat
+  // the row as a loose record for the field access below.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const src = read.data as any;
 
   if (readErr || !src) {
     return { error: readErr?.message ?? "Product not found.", slug: null };
+  }
+
+  // A product awaiting approval can't be duplicated.
+  if ((src as { approval_status?: string }).approval_status === "pending") {
+    return {
+      error: "This product is pending approval and can't be duplicated.",
+      slug: null,
+    };
   }
 
   // 2. Pick a free slug.
@@ -283,6 +308,7 @@ export async function duplicateProduct(
       description: src.description,
       price_cents: isVariable ? null : src.price_cents,
       sale_price_cents: isVariable ? null : src.sale_price_cents,
+      quantity: src.quantity ?? 0,
       in_stock: src.in_stock,
       featured: src.featured,
       published: false,
@@ -346,6 +372,7 @@ export async function duplicateProduct(
     id: string;
     price_cents: number;
     sale_price_cents: number | null;
+    quantity: number;
     in_stock: boolean;
     position: number;
     variation_terms: { attribute_id: string; term_id: string }[];
@@ -362,6 +389,7 @@ export async function duplicateProduct(
           sku: null,
           price_cents: v.price_cents,
           sale_price_cents: v.sale_price_cents,
+          quantity: v.quantity ?? 0,
           in_stock: v.in_stock,
           position: v.position,
         }))
@@ -460,6 +488,7 @@ export async function createProduct(
     // Variable products leave price null — the trigger fills the range.
     price_cents: isVariable ? null : create.price_cents,
     sale_price_cents: isVariable ? null : create.sale_price_cents,
+    quantity: create.quantity,
     in_stock: create.in_stock,
     featured: create.featured,
     published: create.published,

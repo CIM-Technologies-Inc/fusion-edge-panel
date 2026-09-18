@@ -41,6 +41,7 @@ import {
 } from "../lib/attributes";
 import { getRequiredAttributes } from "../lib/requiredAttributes";
 import { slugify } from "../lib/products";
+import { cancelProductApproval } from "../lib/approvals";
 
 const shell =
   "rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/[0.03]";
@@ -58,6 +59,7 @@ type FormState = {
   description: string;
   price: string;
   sale_price: string;
+  quantity: string;
   in_stock: boolean;
   featured: boolean;
   published: boolean;
@@ -73,8 +75,12 @@ export default function ProductEditPage() {
   const { attributes, reload: reloadAttributes } = useAttributes(product?.id);
   const { categories } = useCategories();
   const { companies, brandsByCompany } = useCompanyBrands();
-  const { isAdmin } = useAuth();
+  const { isAdmin, can, companyId: myCompanyId } = useAuth();
   const { suppliers } = useSuppliers(isAdmin);
+  // Company-users don't pick a company — it stays their own.
+  const lockCompany = !isAdmin && !!myCompanyId;
+  // Only a company user goes through approval; admins & no-company staff don't.
+  const isCompanyUser = !isAdmin && !!myCompanyId;
   const { notify } = useToast();
   const navigate = useNavigate();
 
@@ -97,6 +103,10 @@ export default function ProductEditPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [submitted, setSubmitted] = useState(false);
+  // Edit wizard. An existing product already has everything filled, so open
+  // straight on the full form (step 3); go back to step 2 to change the
+  // company/brand/category. (Step 1, type, is fixed and always done.)
+  const [step, setStep] = useState<2 | 3>(3);
 
   // Seed the form once the product loads.
   useEffect(() => {
@@ -114,6 +124,7 @@ export default function ProductEditPage() {
       description: product.description ?? "",
       price: centsToInput(product.price_cents),
       sale_price: centsToInput(product.sale_price_cents),
+      quantity: String(product.quantity ?? 0),
       in_stock: product.in_stock,
       featured: product.featured,
       published: product.published,
@@ -161,6 +172,7 @@ export default function ProductEditPage() {
           price: centsToInput(v.price_cents),
           sale_price: centsToInput(v.sale_price_cents),
           sku: v.sku ?? "",
+          quantity: String(v.quantity ?? 0),
           in_stock: v.in_stock,
           image_url:
             product.images.find((i) => i.variation_id === v.id)?.url ?? "",
@@ -202,6 +214,24 @@ export default function ProductEditPage() {
 
   const isVariable = product.kind === "variable";
 
+  // A company-user can't edit a product while it's pending approval — they must
+  // cancel the request first (which reverts it to a draft). Admins are exempt.
+  const lockedPending =
+    isCompanyUser && product.approval_status === "pending";
+
+  const handleCancelApproval = async () => {
+    if (
+      !window.confirm(
+        "Cancel the approval request? The product returns to a draft so you can edit it, then submit again for approval."
+      )
+    )
+      return;
+    const { error } = await cancelProductApproval(product.id);
+    if (error) return notify("error", "Couldn't cancel", error);
+    notify("info", "Approval cancelled", "The product is a draft again.");
+    navigate(0); // reload so the form unlocks with fresh state
+  };
+
   // Category-required attributes for the currently selected category (by slug).
   const categorySlug =
     categories.find((c) => c.id === form.category_id)?.slug ?? null;
@@ -228,6 +258,11 @@ export default function ProductEditPage() {
   const companyBrands = form.company_id
     ? brandsByCompany.get(form.company_id) ?? []
     : [];
+
+  // Step 2 (classification) is complete when company (unless auto-locked),
+  // category and brand are all chosen.
+  const canContinueClassification =
+    (lockCompany || !!form.company_id) && !!form.category_id && !!form.brand_id;
 
   /**
    * The variation-forming attributes, narrowed to the terms this product
@@ -319,11 +354,17 @@ export default function ProductEditPage() {
     notify("success", "Image added", `${urls.length} uploaded.`);
   };
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(
+    e: React.FormEvent | React.MouseEvent,
+    publishOverride?: boolean
+  ) {
     e.preventDefault();
     if (!form || !product) return;
     setFormError(null);
     setSubmitted(true);
+    // Company-users publish via "Submit for approval" (explicit intent); admins
+    // use the Published checkbox (form state).
+    const wantPublished = publishOverride ?? form.published;
 
     const price = inputToCents(form.price);
     const salePrice = inputToCents(form.sale_price);
@@ -410,9 +451,14 @@ export default function ProductEditPage() {
       // Never write price columns for a variable product — the trigger owns them.
       price_cents: isVariable ? null : price,
       sale_price_cents: isVariable ? null : salePrice,
-      in_stock: form.in_stock,
+      quantity: isVariable
+        ? 0
+        : Math.max(0, Math.floor(Number(form.quantity) || 0)),
+      in_stock: isVariable
+        ? form.in_stock
+        : Math.max(0, Math.floor(Number(form.quantity) || 0)) > 0,
       featured: form.featured,
-      published: form.published,
+      published: wantPublished,
     };
 
     setSaving(true);
@@ -500,7 +546,15 @@ export default function ProductEditPage() {
       return;
     }
 
-    notify("success", "Product updated", `${edit.name} was saved.`);
+    if (isCompanyUser && wantPublished) {
+      notify(
+        "success",
+        "Submitted for approval",
+        `${edit.name} was sent to an admin for review.`
+      );
+    } else {
+      notify("success", "Product updated", `${edit.name} was saved.`);
+    }
     navigate(`/product/${edit.slug}`);
   }
 
@@ -524,6 +578,248 @@ export default function ProductEditPage() {
         </Badge>
       </div>
 
+      {lockedPending ? (
+        <div className={`${shell} text-center`}>
+          <span className="inline-flex items-center rounded-full bg-warning-50 px-3 py-1 text-theme-xs font-medium text-warning-700 dark:bg-warning-500/15 dark:text-warning-300">
+            Pending approval
+          </span>
+          <h3 className="mt-4 text-lg font-semibold text-gray-800 dark:text-white/90">
+            This product is waiting for admin approval
+          </h3>
+          <p className="mx-auto mt-1 max-w-md text-sm text-gray-500 dark:text-gray-400">
+            You can't edit it while it's under review. Cancel the request to turn
+            it back into a draft — then you can make changes and submit it for
+            approval again.
+          </p>
+          <div className="flex justify-center gap-3 mt-6">
+            <Link
+              to="/product"
+              className="h-11 leading-[44px] rounded-lg border border-gray-300 px-5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+            >
+              Back to products
+            </Link>
+            <button
+              type="button"
+              onClick={handleCancelApproval}
+              className="h-11 rounded-lg bg-brand-500 px-5 text-sm font-medium text-white hover:bg-brand-600"
+            >
+              Cancel approval request
+            </button>
+          </div>
+        </div>
+      ) : (
+      <>
+      {/* Rejection notice — shown when an admin sent it back. */}
+      {product.approval_status === "rejected" && (
+        <div className="mb-6 rounded-2xl border border-error-500/30 bg-error-50 p-5 dark:border-error-500/30 dark:bg-error-500/10">
+          <div className="flex items-start gap-3">
+            <svg className="mt-0.5 h-5 w-5 shrink-0 text-error-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 8v4M12 16h.01" />
+            </svg>
+            <div>
+              <h4 className="font-medium text-error-700 dark:text-error-400">
+                This product was not approved
+              </h4>
+              <p className="mt-1 text-sm text-error-600 dark:text-error-300">
+                {product.rejection_reason?.trim()
+                  ? product.rejection_reason
+                  : "An admin sent it back for changes. Update it and submit for approval again."}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Wizard progress: 1 — 2 — 3. Type (1) is fixed and already done. */}
+      <div className="mb-6 flex items-center justify-center">
+        {([
+          [1, "Type"],
+          [2, "Details"],
+          [3, "Product"],
+        ] as const).map(([n, label], i) => {
+          const active = step === n;
+          const done = step > n;
+          const clickable = n === 2 && step === 3; // only jump back to step 2
+          return (
+            <div key={n} className="flex items-center">
+              <button
+                type="button"
+                disabled={!clickable}
+                onClick={() => clickable && setStep(2)}
+                className={`flex items-center gap-2 ${
+                  clickable ? "cursor-pointer" : "cursor-default"
+                }`}
+              >
+                <span
+                  className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold transition ${
+                    active
+                      ? "bg-brand-500 text-white"
+                      : done
+                      ? "bg-brand-100 text-brand-600 dark:bg-brand-500/20 dark:text-brand-300"
+                      : "bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500"
+                  }`}
+                >
+                  {done ? "✓" : n}
+                </span>
+                <span
+                  className={`hidden text-sm font-medium sm:block ${
+                    active
+                      ? "text-gray-800 dark:text-white/90"
+                      : "text-gray-400 dark:text-gray-500"
+                  }`}
+                >
+                  {label}
+                </span>
+              </button>
+              {i < 2 && (
+                <span
+                  className={`mx-3 h-px w-8 sm:w-12 ${
+                    step > n ? "bg-brand-500" : "bg-gray-200 dark:bg-gray-700"
+                  }`}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {step === 2 ? (
+        /* Step 2 — company (admins), category and brand. */
+        <div className="mx-auto max-w-2xl">
+          <div className={`${shell} space-y-5`}>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-800 dark:text-white/90">
+                {lockCompany ? "Brand & category" : "Company, brand & category"}
+              </h2>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {lockCompany
+                  ? "Choose the brand and category for this product."
+                  : "Choose the company, then its brand and the category."}
+              </p>
+            </div>
+
+            {!lockCompany && (
+              <div>
+                <Label>
+                  Company <span className="text-error-500">*</span>
+                </Label>
+                <select
+                  value={form.company_id}
+                  onChange={(e) => {
+                    const cid = e.target.value;
+                    const allowed = cid ? brandsByCompany.get(cid) ?? [] : [];
+                    const keepBrand = allowed.some((b) => b.id === form.brand_id)
+                      ? form.brand_id
+                      : "";
+                    setForm((f) =>
+                      f ? { ...f, company_id: cid, brand_id: keepBrand } : f
+                    );
+                  }}
+                  className={`${inputClass} dark:bg-gray-900`}
+                >
+                  <option value="">Select a company…</option>
+                  {companies.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div>
+              <Label>
+                Brand <span className="text-error-500">*</span>
+              </Label>
+              <select
+                value={form.brand_id}
+                disabled={!form.company_id}
+                onChange={(e) => set("brand_id", e.target.value)}
+                className={`${inputClass} dark:bg-gray-900 disabled:opacity-50`}
+              >
+                <option value="">
+                  {form.company_id
+                    ? companyBrands.length
+                      ? "Select a brand…"
+                      : "No brands in this company"
+                    : "Pick a company first"}
+                </option>
+                {companyBrands.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <Label>
+                Category <span className="text-error-500">*</span>
+              </Label>
+              <select
+                value={form.category_id}
+                onChange={(e) => set("category_id", e.target.value)}
+                className={`${inputClass} dark:bg-gray-900`}
+              >
+                <option value="">Select a category…</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                disabled={!canContinueClassification}
+                onClick={() => setStep(3)}
+                className="h-11 rounded-lg bg-brand-500 px-5 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50"
+              >
+                Continue →
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+      <>
+      {/* Summary of the classification, with a way back to change it. */}
+      <div className={`${shell} mb-6 flex flex-wrap items-center gap-x-8 gap-y-3`}>
+        <div>
+          <span className="text-theme-xs text-gray-400">Type</span>
+          <p className="font-medium text-gray-800 capitalize dark:text-white/90">
+            {product.kind}
+          </p>
+        </div>
+        <div>
+          <span className="text-theme-xs text-gray-400">Company</span>
+          <p className="font-medium text-gray-800 dark:text-white/90">
+            {companies.find((c) => c.id === form.company_id)?.name ?? "—"}
+          </p>
+        </div>
+        <div>
+          <span className="text-theme-xs text-gray-400">Brand</span>
+          <p className="font-medium text-gray-800 dark:text-white/90">
+            {companyBrands.find((b) => b.id === form.brand_id)?.name ?? "—"}
+          </p>
+        </div>
+        <div>
+          <span className="text-theme-xs text-gray-400">Category</span>
+          <p className="font-medium text-gray-800 dark:text-white/90">
+            {categories.find((c) => c.id === form.category_id)?.name ?? "—"}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setStep(2)}
+          className="h-9 ml-auto rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+        >
+          Change
+        </button>
+      </div>
+
       <form onSubmit={handleSubmit} className="grid gap-6 lg:grid-cols-3">
         {/* Left column: details card, then the attributes card. */}
         <div className="space-y-6 lg:col-span-2">
@@ -542,17 +838,6 @@ export default function ProductEditPage() {
           <div className="grid gap-5 sm:grid-cols-2">
             <div>
               <Label>
-                Slug <span className="text-error-500">*</span>
-              </Label>
-              <Input
-                value={form.slug}
-                onChange={(e) => set("slug", e.target.value)}
-                error={!!fieldErrors.slug}
-                hint={fieldErrors.slug}
-              />
-            </div>
-            <div>
-              <Label>
                 SKU{" "}
                 {!isVariable && <span className="text-error-500">*</span>}
               </Label>
@@ -563,103 +848,23 @@ export default function ProductEditPage() {
                 onChange={(e) => set("sku", e.target.value)}
               />
             </div>
-          </div>
-          <div className="grid gap-5 sm:grid-cols-2">
-            <div>
-              <Label>
-                Category <span className="text-error-500">*</span>
-              </Label>
-              <select
-                value={form.category_id}
-                onChange={(e) => set("category_id", e.target.value)}
-                className={`${inputClass} dark:bg-gray-900 ${
-                  fieldErrors.category
-                    ? "border-error-500 focus:border-error-300 focus:ring-error-500/20"
-                    : ""
-                }`}
-              >
-                <option value="">Select a category…</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-              {fieldErrors.category && (
-                <p className="mt-1.5 text-xs text-error-500">
-                  {fieldErrors.category}
-                </p>
-              )}
-            </div>
-            <div>
-              <Label>
-                Company <span className="text-error-500">*</span>
-              </Label>
-              <select
-                value={form.company_id}
-                onChange={(e) => {
-                  const cid = e.target.value;
-                  const allowed = cid ? brandsByCompany.get(cid) ?? [] : [];
-                  const keepBrand = allowed.some((b) => b.id === form.brand_id)
-                    ? form.brand_id
-                    : "";
-                  // Update both in one pass so the brand can't dangle.
-                  setForm((f) =>
-                    f ? { ...f, company_id: cid, brand_id: keepBrand } : f
-                  );
-                }}
-                className={`${inputClass} dark:bg-gray-900 ${
-                  fieldErrors.company
-                    ? "border-error-500 focus:border-error-300 focus:ring-error-500/20"
-                    : ""
-                }`}
-              >
-                <option value="">Select a company…</option>
-                {companies.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-              {fieldErrors.company && (
-                <p className="mt-1.5 text-xs text-error-500">
-                  {fieldErrors.company}
-                </p>
-              )}
-            </div>
-            <div>
-              <Label>
-                Brand <span className="text-error-500">*</span>
-              </Label>
-              <select
-                value={form.brand_id}
-                disabled={!form.company_id}
-                onChange={(e) => set("brand_id", e.target.value)}
-                className={`${inputClass} dark:bg-gray-900 disabled:opacity-50 ${
-                  fieldErrors.brand
-                    ? "border-error-500 focus:border-error-300 focus:ring-error-500/20"
-                    : ""
-                }`}
-              >
-                <option value="">
-                  {form.company_id
-                    ? companyBrands.length
-                      ? "Select a brand…"
-                      : "No brands in this company"
-                    : "Pick a company first"}
-                </option>
-                {companyBrands.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-              {fieldErrors.brand && (
-                <p className="mt-1.5 text-xs text-error-500">
-                  {fieldErrors.brand}
-                </p>
-              )}
-            </div>
+            {/* Inventory sits beside the SKU for simple products; variable
+                products track stock per variation. */}
+            {!isVariable && (
+              <div>
+                <Label>Inventory quantity</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step={1}
+                  value={form.quantity}
+                  onChange={(e) => set("quantity", e.target.value)}
+                  hint={
+                    Number(form.quantity) > 0 ? "In stock" : "0 = out of stock"
+                  }
+                />
+              </div>
+            )}
           </div>
           {/* Supplier assignment — admins only. */}
           {isAdmin && (
@@ -852,7 +1057,6 @@ export default function ProductEditPage() {
             <ImagePreview
               urls={images}
               error={fieldErrors.images}
-              onChangeAt={setImageAt}
               onAdd={addImage}
               onRemove={removeImageFromPreview}
               onChoose={setPickerRow}
@@ -935,9 +1139,13 @@ export default function ProductEditPage() {
             <h3 className="font-medium text-gray-800 dark:text-white/90">Status</h3>
             {(
               [
-                ["published", "Published"],
-                ["in_stock", "In stock"],
-                ["featured", "Featured"],
+                // Company users publish via the Save-draft / Submit-for-approval
+                // buttons below; admins & no-company staff use this checkbox.
+                ...(!isCompanyUser ? ([["published", "Published"]] as const) : ([] as const)),
+                // Featuring is admin or a staff role with product.feature.
+                ...(can("product", "feature")
+                  ? ([["featured", "Featured"]] as const)
+                  : ([] as const)),
               ] as const
             ).map(([key, label]) => (
               <label
@@ -955,19 +1163,58 @@ export default function ProductEditPage() {
                 />
               </label>
             ))}
+
+            {isVariable && (
+              <p className="text-theme-xs text-gray-400">
+                Stock is tracked per variation — set quantities in the Variations
+                tab.
+              </p>
+            )}
+
+            {isCompanyUser && (
+              <p className="text-theme-xs text-gray-400">
+                Save as a draft to keep working, or submit for approval — an
+                admin reviews it and it goes live once approved.
+              </p>
+            )}
           </div>
 
           {formError && (
             <p className="text-sm text-error-500">{formError}</p>
           )}
 
-          <div className="flex gap-3">
-            <Button className="flex-1" size="sm" disabled={saving}>
-              {saving ? "Saving…" : "Save changes"}
-            </Button>
-          </div>
+          {!isCompanyUser ? (
+            <div className="flex gap-3">
+              <Button className="flex-1" size="sm" disabled={saving}>
+                {saving ? "Saving…" : "Save changes"}
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={(e) => handleSubmit(e, true)}
+                disabled={saving}
+                className="w-full h-11 rounded-lg bg-brand-500 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
+              >
+                {saving ? "Saving…" : "Submit for approval"}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => handleSubmit(e, false)}
+                disabled={saving}
+                className="w-full h-11 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+              >
+                Save as draft
+              </button>
+            </div>
+          )}
         </div>
       </form>
+      </>
+      )}
+      </>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import PageBreadcrumb from "../components/common/PageBreadCrumb";
 import PageMeta from "../components/common/PageMeta";
@@ -45,8 +45,14 @@ export default function ProductNew() {
   const { companies, brandsByCompany } = useCompanyBrands();
   const { attributes, reload: reloadAttributes } = useAttributes();
   const { notify } = useToast();
-  const { isSupplier, session } = useAuth();
+  const { isAdmin, can, isSupplier, companyId: myCompanyId, session } =
+    useAuth();
   const navigate = useNavigate();
+  // Company-users don't pick a company — their products belong to their own.
+  const lockCompany = !isAdmin && !!myCompanyId;
+  // A "company user" (non-admin assigned to a company) goes through approval.
+  // Admins and no-company staff publish directly.
+  const isCompanyUser = !isAdmin && !!myCompanyId;
   const [assignments, setAssignments] = useState<AttributeAssignment[]>([]);
   // Values typed on this page before the product exists. Held locally and
   // written as product-owned (private) values once the product is created —
@@ -76,16 +82,43 @@ export default function ProductNew() {
   const [pickerRow, setPickerRow] = useState<number | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
+  // Build the product slug automatically from name + SKU. When there's no SKU
+  // (variable products), a short random suffix keeps it unique. Never shown or
+  // edited — the DB's uniqueSlug() still de-dupes on the rare clash.
+  const buildSlug = (nm: string, sk: string) => {
+    const base = slugify(nm) || "product";
+    const tail = sk.trim()
+      ? slugify(sk)
+      : Math.random().toString(36).slice(2, 6);
+    return `${base}-${tail}`;
+  };
+
   const [kind, setKind] = useState<ProductKind>("simple");
+  // Creation wizard: 1) product type, 2) company/brand/category, 3) the form.
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  // Pick a type and move to the classification step.
+  const chooseKind = (k: ProductKind) => {
+    setKind(k);
+    setStep(2);
+  };
   const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
-  const [slugEdited, setSlugEdited] = useState(false);
   const [sku, setSku] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [companyId, setCompanyId] = useState("");
   const [brandId, setBrandId] = useState("");
+  // For a company-user, force the company to their own once it's known.
+  useEffect(() => {
+    if (lockCompany && myCompanyId && companyId !== myCompanyId) {
+      setCompanyId(myCompanyId);
+    }
+  }, [lockCompany, myCompanyId, companyId]);
   // Brands available for the chosen company (the picker filters by company).
   const companyBrands = companyId ? brandsByCompany.get(companyId) ?? [] : [];
+
+  // Step 2 (classification) is complete when company (unless auto-locked),
+  // category and brand are all chosen.
+  const canContinueClassification =
+    (lockCompany || !!companyId) && !!categoryId && !!brandId;
 
   // Category-required attributes (from requiredAttributes.json), matched by the
   // selected category's slug. Auto-shown as fields; their typed values.
@@ -110,7 +143,7 @@ export default function ProductNew() {
   const [images, setImages] = useState<string[]>([""]);
   const [model3d, setModel3d] = useState("");
   const [published, setPublished] = useState(false);
-  const [inStock, setInStock] = useState(true);
+  const [quantity, setQuantity] = useState("0");
   const [featured, setFeatured] = useState(false);
 
   const [saving, setSaving] = useState(false);
@@ -122,7 +155,6 @@ export default function ProductNew() {
   // Once submitted, keep field errors live so they clear as the user fixes.
   const revalidate = (over: Partial<{
     name: string;
-    slug: string;
     sku: string;
     price: string;
     salePrice: string;
@@ -136,12 +168,14 @@ export default function ProductNew() {
     const s = inputToCents(over.salePrice ?? salePrice);
     // Variable products price via their variations — never flag the fields.
     const variable = kind === "variable";
+    const nm = over.name ?? name;
+    const sk = over.sku ?? sku;
     setFieldErrors(
       validateFields({
-        name: over.name ?? name,
-        slug: over.slug ?? slug,
+        name: nm,
+        slug: buildSlug(nm, sk),
         kind,
-        sku: over.sku ?? sku,
+        sku: sk,
         price_cents: variable ? null : Number.isNaN(p) ? null : p,
         sale_price_cents: variable ? null : Number.isNaN(s) ? null : s,
         image_urls: (over.images ?? images).map((u) => u.trim()).filter(Boolean),
@@ -152,12 +186,9 @@ export default function ProductNew() {
     );
   };
 
-  // Auto-fill the slug from the name until the user edits the slug directly.
   const onName = (v: string) => {
     setName(v);
-    const nextSlug = slugEdited ? slug : slugify(v);
-    if (!slugEdited) setSlug(nextSlug);
-    revalidate({ name: v, slug: nextSlug });
+    revalidate({ name: v });
   };
 
   const setImageAt = (i: number, v: string) =>
@@ -211,10 +242,16 @@ export default function ProductNew() {
     revalidate({ images: next });
   };
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(
+    e: React.FormEvent | React.MouseEvent,
+    publishOverride?: boolean
+  ) {
     e.preventDefault();
     setError(null);
     setSubmitted(true);
+    // Company-users publish via the "Submit for approval" button, which passes
+    // an explicit intent; admins use the Published checkbox (state).
+    const wantPublished = publishOverride ?? published;
 
     const priceCents = inputToCents(price);
     const saleCents = inputToCents(salePrice);
@@ -233,6 +270,9 @@ export default function ProductNew() {
     const isVariable = kind === "variable";
     const effectivePrice = isVariable ? null : priceCents;
     const effectiveSale = isVariable ? null : saleCents;
+
+    // Slug is auto-generated from name + SKU (never shown/edited).
+    const slug = buildSlug(name, sku);
 
     const errors = validateFields({
       name,
@@ -294,9 +334,14 @@ export default function ProductNew() {
       description: descEmpty ? null : descHtml,
       price_cents: effectivePrice,
       sale_price_cents: effectiveSale,
-      in_stock: inStock,
+      // Inventory drives in_stock (quantity > 0). Variable products get their
+      // stock from variations, so their own quantity stays 0.
+      quantity: isVariable ? 0 : Math.max(0, Math.floor(Number(quantity) || 0)),
+      in_stock: isVariable
+        ? true
+        : Math.max(0, Math.floor(Number(quantity) || 0)) > 0,
       featured,
-      published,
+      published: wantPublished,
       image_urls: imageUrls,
     };
 
@@ -383,7 +428,19 @@ export default function ProductNew() {
     }
     setSaving(false);
 
-    notify("success", "Product created", `${create.name} was added.`);
+    if (isCompanyUser && wantPublished) {
+      notify(
+        "success",
+        "Submitted for approval",
+        `${create.name} was sent to an admin for review.`
+      );
+    } else {
+      notify(
+        "success",
+        wantPublished ? "Product published" : "Draft saved",
+        `${create.name} was added.`
+      );
+    }
     navigate(`/product/${newSlug}`);
   }
 
@@ -401,44 +458,261 @@ export default function ProductNew() {
         </Link>
       </div>
 
-      {/* Kind selector — simple works now; variable is coming. */}
-      <div data-tour="product-type" className={`${shell} mb-6`}>
-        <Label>Product type</Label>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <button
-            type="button"
-            onClick={() => setKind("simple")}
-            className={`rounded-xl border p-4 text-left transition ${
-              kind === "simple"
-                ? "border-brand-500 bg-brand-50 dark:bg-brand-500/10"
-                : "border-gray-200 hover:border-gray-300 dark:border-gray-700"
-            }`}
-          >
-            <span className="block font-medium text-gray-800 dark:text-white/90">
-              Simple
-            </span>
-            <span className="block text-sm text-gray-500 dark:text-gray-400">
-              One product, one price.
-            </span>
-          </button>
+      {/* Wizard progress: 1 — 2 — 3 with the active step highlighted. */}
+      <div className="mb-6 flex items-center justify-center">
+        {([
+          [1, "Type"],
+          [2, "Details"],
+          [3, "Product"],
+        ] as const).map(([n, label], i) => {
+          const active = step === n;
+          const done = step > n;
+          // Only allow jumping back to an already-completed step.
+          const clickable = n < step;
+          return (
+            <div key={n} className="flex items-center">
+              <button
+                type="button"
+                disabled={!clickable}
+                onClick={() => clickable && setStep(n as 1 | 2 | 3)}
+                className={`flex items-center gap-2 ${
+                  clickable ? "cursor-pointer" : "cursor-default"
+                }`}
+              >
+                <span
+                  className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold transition ${
+                    active
+                      ? "bg-brand-500 text-white"
+                      : done
+                      ? "bg-brand-100 text-brand-600 dark:bg-brand-500/20 dark:text-brand-300"
+                      : "bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500"
+                  }`}
+                >
+                  {done ? "✓" : n}
+                </span>
+                <span
+                  className={`hidden text-sm font-medium sm:block ${
+                    active
+                      ? "text-gray-800 dark:text-white/90"
+                      : "text-gray-400 dark:text-gray-500"
+                  }`}
+                >
+                  {label}
+                </span>
+              </button>
+              {i < 2 && (
+                <span
+                  className={`mx-3 h-px w-8 sm:w-12 ${
+                    step > n ? "bg-brand-500" : "bg-gray-200 dark:bg-gray-700"
+                  }`}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
 
-          <button
-            type="button"
-            onClick={() => setKind("variable")}
-            className={`rounded-xl border p-4 text-left transition ${
-              kind === "variable"
-                ? "border-brand-500 bg-brand-50 dark:bg-brand-500/10"
-                : "border-gray-200 hover:border-gray-300 dark:border-gray-700"
-            }`}
-          >
-            <span className="block font-medium text-gray-800 dark:text-white/90">
-              Variable
-            </span>
-            <span className="block text-sm text-gray-500 dark:text-gray-400">
-              Options like Color &amp; Size, each with its own price.
-            </span>
-          </button>
+      {step === 1 ? (
+        /* Step 1 — pick a product type. Choosing one advances to the form. */
+        <div data-tour="product-type" className={`${shell} mx-auto max-w-2xl`}>
+          <div className="mb-5 text-center">
+            <h2 className="text-lg font-semibold text-gray-800 dark:text-white/90">
+              What kind of product?
+            </h2>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              Pick a type to get started. You can change it before saving.
+            </p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => chooseKind("simple")}
+              className="group rounded-xl border border-gray-200 p-5 text-left transition hover:border-brand-500 hover:bg-brand-50 dark:border-gray-700 dark:hover:bg-brand-500/10"
+            >
+              <span className="block text-base font-medium text-gray-800 dark:text-white/90">
+                Simple
+              </span>
+              <span className="mt-1 block text-sm text-gray-500 dark:text-gray-400">
+                One product, one price.
+              </span>
+              <span className="mt-4 inline-flex items-center text-sm font-medium text-brand-500 opacity-0 transition group-hover:opacity-100">
+                Continue →
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => chooseKind("variable")}
+              className="group rounded-xl border border-gray-200 p-5 text-left transition hover:border-brand-500 hover:bg-brand-50 dark:border-gray-700 dark:hover:bg-brand-500/10"
+            >
+              <span className="block text-base font-medium text-gray-800 dark:text-white/90">
+                Variable
+              </span>
+              <span className="mt-1 block text-sm text-gray-500 dark:text-gray-400">
+                Options like Color &amp; Size, each with its own price.
+              </span>
+              <span className="mt-4 inline-flex items-center text-sm font-medium text-brand-500 opacity-0 transition group-hover:opacity-100">
+                Continue →
+              </span>
+            </button>
+          </div>
         </div>
+      ) : step === 2 ? (
+        /* Step 2 — company (admins), category and brand. */
+        <div className="mx-auto max-w-2xl space-y-6">
+          <div className={`${shell} flex items-center justify-between`}>
+            <div>
+              <span className="text-theme-xs text-gray-400">Product type</span>
+              <p className="font-medium text-gray-800 capitalize dark:text-white/90">
+                {kind}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setStep(1)}
+              className="h-9 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+            >
+              Change
+            </button>
+          </div>
+
+          <div className={`${shell} space-y-5`}>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-800 dark:text-white/90">
+                {lockCompany ? "Brand & category" : "Company, brand & category"}
+              </h2>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {lockCompany
+                  ? "Choose the brand and category for this product."
+                  : "Choose the company, then its brand and the category."}
+              </p>
+            </div>
+
+            {!lockCompany && (
+              <div>
+                <Label>
+                  Company <span className="text-error-500">*</span>
+                </Label>
+                <select
+                  value={companyId}
+                  onChange={(e) => {
+                    const cid = e.target.value;
+                    setCompanyId(cid);
+                    const allowed = cid ? brandsByCompany.get(cid) ?? [] : [];
+                    const keepBrand = allowed.some((b) => b.id === brandId)
+                      ? brandId
+                      : "";
+                    setBrandId(keepBrand);
+                    revalidate({ companyId: cid, brandId: keepBrand });
+                  }}
+                  className={`${inputClass} dark:bg-gray-900`}
+                >
+                  <option value="">Select a company…</option>
+                  {companies.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div>
+              <Label>
+                Brand <span className="text-error-500">*</span>
+              </Label>
+              <select
+                value={brandId}
+                disabled={!companyId}
+                onChange={(e) => {
+                  setBrandId(e.target.value);
+                  revalidate({ brandId: e.target.value });
+                }}
+                className={`${inputClass} dark:bg-gray-900 disabled:opacity-50`}
+              >
+                <option value="">
+                  {companyId
+                    ? companyBrands.length
+                      ? "Select a brand…"
+                      : "No brands in this company"
+                    : "Pick a company first"}
+                </option>
+                {companyBrands.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <Label>
+                Category <span className="text-error-500">*</span>
+              </Label>
+              <select
+                value={categoryId}
+                onChange={(e) => {
+                  setCategoryId(e.target.value);
+                  revalidate({ categoryId: e.target.value });
+                }}
+                className={`${inputClass} dark:bg-gray-900`}
+              >
+                <option value="">Select a category…</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                disabled={!canContinueClassification}
+                onClick={() => setStep(3)}
+                className="h-11 rounded-lg bg-brand-500 px-5 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50"
+              >
+                Continue →
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+      <>
+      {/* Summary of the wizard choices, with a way back to change them. */}
+      <div className={`${shell} mb-6 flex flex-wrap items-center gap-x-8 gap-y-3`}>
+        <div>
+          <span className="text-theme-xs text-gray-400">Type</span>
+          <p className="font-medium text-gray-800 capitalize dark:text-white/90">
+            {kind}
+          </p>
+        </div>
+        <div>
+          <span className="text-theme-xs text-gray-400">Company</span>
+          <p className="font-medium text-gray-800 dark:text-white/90">
+            {companies.find((c) => c.id === companyId)?.name ?? "—"}
+          </p>
+        </div>
+        <div>
+          <span className="text-theme-xs text-gray-400">Brand</span>
+          <p className="font-medium text-gray-800 dark:text-white/90">
+            {companyBrands.find((b) => b.id === brandId)?.name ?? "—"}
+          </p>
+        </div>
+        <div>
+          <span className="text-theme-xs text-gray-400">Category</span>
+          <p className="font-medium text-gray-800 dark:text-white/90">
+            {categories.find((c) => c.id === categoryId)?.name ?? "—"}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setStep(2)}
+          className="h-9 ml-auto rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+        >
+          Change
+        </button>
       </div>
 
       <form onSubmit={handleSubmit} className="grid gap-6 lg:grid-cols-3">
@@ -459,21 +733,6 @@ export default function ProductNew() {
           <div className="grid gap-5 sm:grid-cols-2">
             <div>
               <Label>
-                Slug <span className="text-error-500">*</span>
-              </Label>
-              <Input
-                value={slug}
-                onChange={(e) => {
-                  setSlug(e.target.value);
-                  setSlugEdited(true);
-                  revalidate({ slug: e.target.value });
-                }}
-                error={!!fieldErrors.slug}
-                hint={fieldErrors.slug}
-              />
-            </div>
-            <div>
-              <Label>
                 SKU{" "}
                 {kind === "simple" && (
                   <span className="text-error-500">*</span>
@@ -489,110 +748,21 @@ export default function ProductNew() {
                 }}
               />
             </div>
-          </div>
-          <div className="grid gap-5 sm:grid-cols-2">
-            <div>
-              <Label>
-                Category <span className="text-error-500">*</span>
-              </Label>
-              <select
-                value={categoryId}
-                onChange={(e) => {
-                  setCategoryId(e.target.value);
-                  revalidate({ categoryId: e.target.value });
-                }}
-                className={`${inputClass} dark:bg-gray-900 ${
-                  fieldErrors.category
-                    ? "border-error-500 focus:border-error-300 focus:ring-error-500/20"
-                    : ""
-                }`}
-              >
-                <option value="">Select a category…</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-              {fieldErrors.category && (
-                <p className="mt-1.5 text-xs text-error-500">
-                  {fieldErrors.category}
-                </p>
-              )}
-            </div>
-            <div>
-              <Label>
-                Company <span className="text-error-500">*</span>
-              </Label>
-              <select
-                value={companyId}
-                onChange={(e) => {
-                  const cid = e.target.value;
-                  setCompanyId(cid);
-                  // Company drives the brand list, so a company change clears a
-                  // brand that no longer belongs to the new company.
-                  const allowed = cid ? brandsByCompany.get(cid) ?? [] : [];
-                  const keepBrand = allowed.some((b) => b.id === brandId)
-                    ? brandId
-                    : "";
-                  setBrandId(keepBrand);
-                  revalidate({ companyId: cid, brandId: keepBrand });
-                }}
-                className={`${inputClass} dark:bg-gray-900 ${
-                  fieldErrors.company
-                    ? "border-error-500 focus:border-error-300 focus:ring-error-500/20"
-                    : ""
-                }`}
-              >
-                <option value="">Select a company…</option>
-                {companies.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-              {fieldErrors.company && (
-                <p className="mt-1.5 text-xs text-error-500">
-                  {fieldErrors.company}
-                </p>
-              )}
-            </div>
-            <div>
-              <Label>
-                Brand <span className="text-error-500">*</span>
-              </Label>
-              <select
-                value={brandId}
-                disabled={!companyId}
-                onChange={(e) => {
-                  setBrandId(e.target.value);
-                  revalidate({ brandId: e.target.value });
-                }}
-                className={`${inputClass} dark:bg-gray-900 disabled:opacity-50 ${
-                  fieldErrors.brand
-                    ? "border-error-500 focus:border-error-300 focus:ring-error-500/20"
-                    : ""
-                }`}
-              >
-                <option value="">
-                  {companyId
-                    ? companyBrands.length
-                      ? "Select a brand…"
-                      : "No brands in this company"
-                    : "Pick a company first"}
-                </option>
-                {companyBrands.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-              {fieldErrors.brand && (
-                <p className="mt-1.5 text-xs text-error-500">
-                  {fieldErrors.brand}
-                </p>
-              )}
-            </div>
+            {/* Inventory sits beside the SKU for simple products; variable
+                products track stock per variation. */}
+            {kind === "simple" && (
+              <div>
+                <Label>Inventory quantity</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step={1}
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  hint={Number(quantity) > 0 ? "In stock" : "0 = out of stock"}
+                />
+              </div>
+            )}
           </div>
           <div>
             <Label>Short description</Label>
@@ -737,11 +907,6 @@ export default function ProductNew() {
             <ImagePreview
               urls={images}
               error={fieldErrors.images}
-              onChangeAt={(i, v) => {
-                setImageAt(i, v);
-                const next = images.map((u, idx) => (idx === i ? v : u));
-                revalidate({ images: next });
-              }}
               onAdd={addImage}
               onRemove={removeImageFromPreview}
               onChoose={setPickerRow}
@@ -829,9 +994,15 @@ export default function ProductNew() {
             <h3 className="font-medium text-gray-800 dark:text-white/90">Status</h3>
             {(
               [
-                ["published", published, setPublished, "Published"],
-                ["in_stock", inStock, setInStock, "In stock"],
-                ["featured", featured, setFeatured, "Featured"],
+                // Company users publish via the Save-draft / Submit-for-approval
+                // buttons below; admins & no-company staff use this checkbox.
+                ...(!isCompanyUser
+                  ? ([["published", published, setPublished, "Published"]] as const)
+                  : ([] as const)),
+                // Featuring is admin or a staff role with product.feature.
+                ...(can("product", "feature")
+                  ? ([["featured", featured, setFeatured, "Featured"]] as const)
+                  : ([] as const)),
               ] as const
             ).map(([key, val, setter, label]) => (
               <label
@@ -849,19 +1020,56 @@ export default function ProductNew() {
                 />
               </label>
             ))}
-            <p className="text-theme-xs text-gray-400">
-              New products are unpublished by default — tick Published to make it
-              live.
-            </p>
+
+            {kind === "variable" && (
+              <p className="text-theme-xs text-gray-400">
+                Stock is tracked per variation — set each variation's quantity on
+                the edit page.
+              </p>
+            )}
+            {!isCompanyUser ? (
+              <p className="text-theme-xs text-gray-400">
+                New products are unpublished by default — tick Published to make
+                it live.
+              </p>
+            ) : (
+              <p className="text-theme-xs text-gray-400">
+                Save as a draft to keep working, or submit for approval — an
+                admin reviews it and it goes live once approved.
+              </p>
+            )}
           </div>
 
           {error && <p className="text-sm text-error-500">{error}</p>}
 
-          <Button className="w-full" size="sm" disabled={saving}>
-            {saving ? "Creating…" : "Create product"}
-          </Button>
+          {!isCompanyUser ? (
+            <Button className="w-full" size="sm" disabled={saving}>
+              {saving ? "Creating…" : "Create product"}
+            </Button>
+          ) : (
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={(e) => handleSubmit(e, true)}
+                disabled={saving}
+                className="w-full h-11 rounded-lg bg-brand-500 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
+              >
+                {saving ? "Saving…" : "Submit for approval"}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => handleSubmit(e, false)}
+                disabled={saving}
+                className="w-full h-11 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+              >
+                Save as draft
+              </button>
+            </div>
+          )}
         </div>
       </form>
+      </>
+      )}
     </div>
   );
 }

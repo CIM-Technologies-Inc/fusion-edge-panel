@@ -165,6 +165,18 @@ export default function AttributeBuilder({
     const a = value.find((x) => x.attribute_id === attributeId);
     if (!a) return;
     const has = a.term_ids.includes(termId);
+
+    // A simple product's attribute is a single-value spec: picking a value
+    // replaces the current one instead of adding to it. Only variable products
+    // can carry several values on an attribute (for variations).
+    if (!isVariable) {
+      patch(attributeId, {
+        term_ids: has ? [] : [termId],
+        ...(has ? { default_term_id: null } : {}),
+      });
+      return;
+    }
+
     patch(attributeId, {
       term_ids: has
         ? a.term_ids.filter((t) => t !== termId)
@@ -260,8 +272,8 @@ export default function AttributeBuilder({
       {!isVariable && (
         <p className="text-theme-xs text-gray-400">
           Attributes on a simple product are shown as specs (e.g. Material,
-          Warranty). Switch to a variable product to turn them into buyable
-          options.
+          Warranty) and take a single value each. Switch to a variable product
+          to allow several values and turn them into buyable options.
         </p>
       )}
 
