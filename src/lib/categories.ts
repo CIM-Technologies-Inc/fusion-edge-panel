@@ -11,6 +11,26 @@ export type CategoryInput = {
   position: number;
 };
 
+/**
+ * Auto-generate a slug from a name that doesn't collide with an existing one:
+ * "foo", then "foo-1", "foo-2"… `editingId` is skipped so a category keeps its
+ * own slug. Returns a lowercase, hyphenated, unique slug.
+ */
+export function uniqueCategorySlug(
+  name: string,
+  existing: CategoryFull[],
+  editingId?: string
+): string {
+  const base = slugify(name) || "category";
+  const taken = new Set(
+    existing.filter((c) => c.id !== editingId).map((c) => c.slug)
+  );
+  if (!taken.has(base)) return base;
+  let n = 1;
+  while (taken.has(`${base}-${n}`)) n++;
+  return `${base}-${n}`;
+}
+
 /** Mirrors the DB rules so the form can flag problems before the round-trip. */
 export function validateCategory(
   input: CategoryInput,

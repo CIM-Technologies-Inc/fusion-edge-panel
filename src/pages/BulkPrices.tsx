@@ -22,7 +22,7 @@ type Edits = Record<string, PriceEdit>;
 
 export default function BulkPrices() {
   const { notify } = useToast();
-  const { isSupplier, session } = useAuth();
+  const { isSupplier, isAdmin, companyId, session } = useAuth();
 
   const [products, setProducts] = useState<BulkProduct[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,8 +36,11 @@ export default function BulkPrices() {
 
   const load = async () => {
     setLoading(true);
-    const { products, error } = await loadBulkProducts();
-    // Suppliers only see their own (RLS also enforces this).
+    // Admins: all products. Company-users: only their own company's (RLS also
+    // enforces this on save). Legacy suppliers: only their own rows.
+    const { products, error } = await loadBulkProducts(
+      isAdmin ? null : companyId
+    );
     const scoped =
       isSupplier && session?.user
         ? products.filter((p) => p.supplier_id === session.user.id)
@@ -52,7 +55,7 @@ export default function BulkPrices() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSupplier, session]);
+  }, [isSupplier, isAdmin, companyId, session]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

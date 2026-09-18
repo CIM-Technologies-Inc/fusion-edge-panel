@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router";
 import PageBreadcrumb from "../components/common/PageBreadCrumb";
 import PageMeta from "../components/common/PageMeta";
 import Label from "../components/form/Label";
@@ -7,14 +8,13 @@ import MediaPicker from "../components/media/MediaPicker";
 import { Modal } from "../components/ui/modal";
 import { ListToolbar, Pager } from "../components/common/ListControls";
 import { useCompaniesFull } from "../hooks/useCompaniesFull";
-import { useBrands } from "../hooks/useBrands";
 import { useTableControls } from "../hooks/useTableControls";
 import { useToast } from "../context/ToastContext";
+import { useAuth } from "../context/AuthContext";
 import {
   countCompanyBrands,
   createCompany,
   deleteCompany,
-  setCompanyBrands,
   updateCompany,
   validateCompany,
   slugify,
@@ -37,8 +37,8 @@ const EMPTY: CompanyInput = {
 
 export default function Companies() {
   const { companies, loading, error, reload } = useCompaniesFull();
-  const { brands } = useBrands();
   const { notify } = useToast();
+  const { can } = useAuth();
 
   const [form, setForm] = useState<CompanyInput>(EMPTY);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -47,13 +47,6 @@ export default function Companies() {
   const [saving, setSaving] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
-  // Which brands are ticked for the company being edited/created.
-  const [brandIds, setBrandIds] = useState<string[]>([]);
-
-  const toggleBrand = (id: string) =>
-    setBrandIds((ids) =>
-      ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]
-    );
 
   const controls = useTableControls({
     rows: companies,
@@ -75,7 +68,6 @@ export default function Companies() {
     setEditingId(null);
     setSlugEdited(false);
     setFormError(null);
-    setBrandIds([]);
   };
 
   const closeModal = () => {
@@ -99,7 +91,6 @@ export default function Companies() {
       logo_url: c.logo_url,
       position: c.position,
     });
-    setBrandIds(c.brand_ids ?? []);
     setModalOpen(true);
   };
 
@@ -123,19 +114,11 @@ export default function Companies() {
     }
 
     setSaving(true);
-    let companyId = editingId;
     let error: string | null = null;
     if (editingId) {
       ({ error } = await updateCompany(editingId, payload));
     } else {
-      const res = await createCompany(payload);
-      error = res.error;
-      companyId = res.id;
-    }
-
-    // Persist the brand assignments (many-to-many) for this company.
-    if (!error && companyId) {
-      ({ error } = await setCompanyBrands(companyId, brandIds));
+      ({ error } = await createCompany(payload));
     }
     setSaving(false);
 
@@ -183,6 +166,7 @@ export default function Companies() {
 
       <div className="space-y-6">
         <div className="flex justify-end">
+          {can("company", "add") && (
           <button
             type="button"
             onClick={startAdd}
@@ -190,6 +174,7 @@ export default function Companies() {
           >
             + Add company
           </button>
+          )}
         </div>
 
         {/* Create / edit form, in a modal */}
@@ -264,37 +249,6 @@ export default function Companies() {
                   Choose
                 </button>
               </div>
-            </div>
-
-            <div className="mt-5">
-              <Label>Brands in this company</Label>
-              {brands.length === 0 ? (
-                <p className="text-theme-xs text-gray-400">
-                  No brands yet. Create brands first, then assign them here.
-                </p>
-              ) : (
-                <div className="grid gap-2 sm:grid-cols-2 max-h-52 overflow-y-auto rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-                  {brands.map((b) => (
-                    <label
-                      key={b.id}
-                      className="flex items-center gap-2 cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={brandIds.includes(b.id)}
-                        onChange={() => toggleBrand(b.id)}
-                        className="w-4 h-4 rounded accent-brand-500"
-                      />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">
-                        {b.name}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              )}
-              <p className="mt-1 text-theme-xs text-gray-400">
-                A brand can belong to several companies.
-              </p>
             </div>
 
             {formError && (
@@ -382,19 +336,25 @@ export default function Companies() {
                     )}
 
                     <div className="flex-1 min-w-40">
-                      <span className="block font-medium text-gray-800 dark:text-white/90">
+                      <Link
+                        to={`/product/companies/${c.slug}`}
+                        className="block font-medium text-gray-800 hover:text-brand-500 dark:text-white/90"
+                      >
                         {c.name}
-                      </span>
+                      </Link>
                       <span className="block text-theme-xs text-gray-500 dark:text-gray-400">
-                        /{c.slug}
+                        {c.brand_count} brand{c.brand_count === 1 ? "" : "s"}
                       </span>
                     </div>
 
-                    <span className="text-sm text-gray-500 dark:text-gray-400">
-                      {c.brand_count} brand{c.brand_count === 1 ? "" : "s"}
-                    </span>
-
                     <div className="flex gap-2">
+                      <Link
+                        to={`/product/companies/${c.slug}`}
+                        className="h-9 inline-flex items-center rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+                      >
+                        Open
+                      </Link>
+                      {can("company", "edit") && (
                       <button
                         type="button"
                         onClick={() => startEdit(c)}
@@ -402,6 +362,8 @@ export default function Companies() {
                       >
                         Edit
                       </button>
+                      )}
+                      {can("company", "delete") && (
                       <button
                         type="button"
                         onClick={() => handleDelete(c)}
@@ -409,6 +371,7 @@ export default function Companies() {
                       >
                         Delete
                       </button>
+                      )}
                     </div>
                   </div>
                 ))}

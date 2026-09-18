@@ -12,6 +12,7 @@ import {
 } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
 import { useAuth } from "../context/AuthContext";
+import { useCompaniesFull } from "../hooks/useCompaniesFull";
 
 type NavItem = {
   name: string;
@@ -40,7 +41,6 @@ const productAdminItem: NavItem = {
   subItems: [
     { name: "All products", path: "/product" },
     { name: "Categories", path: "/product/categories" },
-    { name: "Brands", path: "/product/brands" },
     { name: "Companies", path: "/product/companies" },
     { name: "Attributes", path: "/product/attributes" },
   ],
@@ -52,26 +52,87 @@ const mediaNavItem: NavItem = {
   path: "/media",
 };
 
+/** Admin-only: review products company-users submitted for publishing. */
+const approvalsNavItem: NavItem = {
+  icon: <BoxIcon />,
+  name: "Approvals",
+  path: "/approvals",
+};
+
 /** Admin-only user & role management. */
 const usersNavItem: NavItem = {
   icon: <GroupIcon />,
   name: "Users",
-  path: "/users",
+  subItems: [
+    { name: "All users", path: "/users" },
+    { name: "Roles & permissions", path: "/roles" },
+  ],
 };
 
 const AppSidebar: React.FC = () => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered } = useSidebar();
-  const { isAdmin, isSupplier } = useAuth();
+  const { isAdmin, can, companyId } = useAuth();
   const location = useLocation();
 
-  // Admins get the full nav. Suppliers manage their own products and need Media
-  // (for image uploads) but not the admin-only sections. Everyone else gets the
-  // plain Product link.
-  const navItems: NavItem[] = isAdmin
-    ? [dashboardItem, productAdminItem, mediaNavItem, usersNavItem]
-    : isSupplier
-    ? [dashboardItem, productItem, mediaNavItem]
-    : [dashboardItem, productItem];
+  // A company-user's own company (RLS returns just theirs). Used to deep-link
+  // "My company" straight to its detail page, where brands are managed.
+  const { companies } = useCompaniesFull();
+  const myCompany = companyId
+    ? companies.find((c) => c.id === companyId)
+    : undefined;
+
+  // Admins get the full nav. Everyone else gets items for what their
+  // permissions allow.
+  let navItems: NavItem[];
+  if (isAdmin) {
+    navItems = [
+      dashboardItem,
+      productAdminItem,
+      approvalsNavItem,
+      mediaNavItem,
+      usersNavItem,
+    ];
+  } else {
+    // Build the Product group from the sub-links this user can view.
+    const productSub = [
+      ...(can("product", "view")
+        ? [{ name: "All products", path: "/product" }]
+        : []),
+      ...(can("category", "view")
+        ? [{ name: "Categories", path: "/product/categories" }]
+        : []),
+      // A company-user gets a direct "My company" link (where brands live),
+      // shown to anyone assigned to a company. Users with the company-view
+      // permission but no company of their own get the full Companies list.
+      ...(myCompany
+        ? [
+            {
+              name: "My company",
+              path: `/product/companies/${myCompany.slug}`,
+            },
+          ]
+        : can("company", "view")
+        ? [{ name: "Companies", path: "/product/companies" }]
+        : []),
+    ];
+
+    const productNav: NavItem[] =
+      productSub.length === 0
+        ? []
+        : productSub.length === 1 && productSub[0].path === "/product"
+        ? [productItem] // just products → a plain link
+        : [{ icon: <BoxIcon />, name: "Product", subItems: productSub }];
+
+    navItems = [
+      dashboardItem,
+      ...productNav,
+      ...(can("approval", "approve") ? [approvalsNavItem] : []),
+      ...(can("media", "view") ? [mediaNavItem] : []),
+      ...(can("users", "view")
+        ? [{ icon: <GroupIcon />, name: "Users", path: "/users" }]
+        : []),
+    ];
+  }
 
   const [openSubmenu, setOpenSubmenu] = useState<{
     type: "main";

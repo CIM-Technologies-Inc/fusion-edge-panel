@@ -5,35 +5,45 @@ export const MEDIA_BUCKET = "media";
 /**
  * Where the current user's uploads live and what they can list.
  *
- * Suppliers are scoped to a folder named by their user id, so their media
- * library shows only their own files. Admins (and legacy files) use the bucket
- * root and see everything. Returns:
- *   prefix   — folder to upload into ("" for admin, "<uid>/" for supplier)
- *   scoped   — true when the caller should only see their own folder
- *   userId   — the caller's id (for scoped listing)
+ * Media is scoped PER COMPANY: a non-admin with a company is scoped to a folder
+ * named by their company id, so everyone in that company shares one media
+ * library. Admins — and no-company STAFF who have the media permission — see
+ * the whole bucket. Returns:
+ *   prefix — folder to upload into ("" for whole-bucket, "<companyId>/" else)
+ *   scoped — true when the caller should only see their company's folder
  */
-async function mediaScope(): Promise<{
-  prefix: string;
-  scoped: boolean;
-  userId: string | null;
-}> {
+async function mediaScope(): Promise<{ prefix: string; scoped: boolean }> {
   const {
     data: { session },
   } = await supabase.auth.getSession();
   const userId = session?.user?.id ?? null;
-  if (!userId) return { prefix: "", scoped: false, userId: null };
+  if (!userId) return { prefix: "", scoped: false };
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role")
+    .select("is_admin, company_id, role_id")
     .eq("id", userId)
     .maybeSingle();
 
-  // Only suppliers are folder-scoped. Admins/staff see the whole bucket.
-  if (profile?.role === "supplier") {
-    return { prefix: `${userId}/`, scoped: true, userId };
+  // Admins see the whole bucket. A non-admin with a company is scoped to it.
+  if (profile?.is_admin) return { prefix: "", scoped: false };
+  const companyId = (profile as { company_id?: string | null } | null)
+    ?.company_id;
+  if (companyId) return { prefix: `${companyId}/`, scoped: true };
+
+  // Non-admin with NO company (staff). If their role grants any media
+  // permission, they manage the whole library like an admin; otherwise they
+  // see nothing shared (an empty own folder).
+  const roleId = (profile as { role_id?: string | null } | null)?.role_id;
+  if (roleId) {
+    const { data: perms } = await supabase
+      .from("role_permissions")
+      .select("action")
+      .eq("role_id", roleId)
+      .eq("resource", "media");
+    if ((perms ?? []).length > 0) return { prefix: "", scoped: false };
   }
-  return { prefix: "", scoped: false, userId };
+  return { prefix: `${userId}/`, scoped: true };
 }
 
 /** Hard ceiling — files bigger than this are rejected outright. */
@@ -170,6 +180,34 @@ export async function uploadModel3D(
   const { error } = await storage().upload(path, file, {
     cacheControl: "3600",
     contentType,
+  });
+  if (error) return { url: null, error: error.message };
+  return { url: publicUrl(path), error: null };
+}
+
+/** Largest Revit family (.rfa) we accept. These can be sizeable BIM files. */
+export const MAX_RFA_BYTES = 50 * 1024 * 1024; // 50 MB
+
+/**
+ * Upload a Revit family (.rfa) file. Like 3D models these are opaque binaries,
+ * so we only validate the extension and size — no re-encoding.
+ */
+export async function uploadRfaFile(
+  file: File
+): Promise<{ url: string | null; error: string | null }> {
+  if (!/\.rfa$/i.test(file.name)) {
+    return { url: null, error: "Use a .rfa (Revit family) file." };
+  }
+  if (file.size > MAX_RFA_BYTES) {
+    const mb = (file.size / 1024 / 1024).toFixed(1);
+    return { url: null, error: `File is ${mb} MB. The limit is 50 MB.` };
+  }
+
+  const { prefix } = await mediaScope();
+  const path = prefix + safeName(file.name);
+  const { error } = await storage().upload(path, file, {
+    cacheControl: "3600",
+    contentType: "application/octet-stream",
   });
   if (error) return { url: null, error: error.message };
   return { url: publicUrl(path), error: null };

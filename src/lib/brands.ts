@@ -8,6 +8,8 @@ export type BrandInput = {
   description: string | null;
   logo_url: string | null;
   position: number;
+  /** Owning company — REQUIRED. Company-users get theirs auto-filled. */
+  company_id: string | null;
 };
 
 /** Mirrors the DB rules so the form can flag problems before the round-trip. */
@@ -17,15 +19,22 @@ export function validateBrand(
   editingId?: string
 ): string | null {
   if (!input.name.trim()) return "Name is required.";
+  if (!input.company_id) return "Company is required.";
+  // Slug is auto-generated as "<company-slug>/<brand-name>" — a couple of
+  // hyphen-word segments separated by a single slash.
   if (!input.slug.trim()) return "Slug is required.";
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(input.slug))
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)?$/.test(input.slug))
     return "Slug must be lowercase words separated by hyphens.";
 
-  // slug is UNIQUE in the schema — catch the clash before Postgres does.
+  // Slug is unique PER COMPANY — catch the clash before Postgres does.
   const clash = existing.some(
-    (b) => b.slug === input.slug && b.id !== editingId
+    (b) =>
+      b.slug === input.slug &&
+      b.id !== editingId &&
+      (b.company_id ?? null) === input.company_id
   );
-  if (clash) return "That slug is already used by another brand.";
+  if (clash)
+    return "That slug is already used by another brand in this company.";
 
   return null;
 }

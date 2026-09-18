@@ -19,6 +19,7 @@ export type BulkProduct = {
   kind: ProductKind;
   sku: string | null;
   supplier_id: string | null;
+  company_id: string | null;
   /** Simple products carry their own price; variable ones are null here. */
   price_cents: number | null;
   sale_price_cents: number | null;
@@ -32,17 +33,19 @@ export type PriceEdit = {
 };
 
 /**
- * Load all products the caller can manage, with variations, for bulk editing.
- * RLS already limits suppliers to their own products.
+ * Load products the caller can manage, with variations, for bulk editing.
+ * RLS scopes reads (admins: all; company-users: their company's products, plus
+ * any published ones). The page filters to the caller's own company so a
+ * company-user only edits their products; admins pass companyId = null.
  */
-export async function loadBulkProducts(): Promise<{
+export async function loadBulkProducts(companyId?: string | null): Promise<{
   products: BulkProduct[];
   error: string | null;
 }> {
   const { data, error } = await supabase
     .from("products")
     .select(
-      `id, name, slug, kind, sku, supplier_id, price_cents, sale_price_cents,
+      `id, name, slug, kind, sku, supplier_id, company_id, price_cents, sale_price_cents,
        variations (
          id, sku, price_cents, sale_price_cents, position,
          variation_terms ( term:attribute_terms ( name ) )
@@ -53,13 +56,18 @@ export async function loadBulkProducts(): Promise<{
   if (error) return { products: [], error: error.message };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const products: BulkProduct[] = (data as any[]).map((p) => ({
+  let rows = data as any[];
+  // Company-users edit only their own company's products (admins pass null).
+  if (companyId) rows = rows.filter((p) => p.company_id === companyId);
+
+  const products: BulkProduct[] = rows.map((p) => ({
     id: p.id,
     name: p.name,
     slug: p.slug,
     kind: p.kind,
     sku: p.sku,
     supplier_id: p.supplier_id ?? null,
+    company_id: p.company_id ?? null,
     price_cents: p.price_cents,
     sale_price_cents: p.sale_price_cents,
     variations: [...(p.variations ?? [])]

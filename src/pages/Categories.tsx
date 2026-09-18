@@ -9,15 +9,16 @@ import { ListToolbar, Pager } from "../components/common/ListControls";
 import { useCategoriesFull } from "../hooks/useCategoriesFull";
 import { useTableControls } from "../hooks/useTableControls";
 import { useToast } from "../context/ToastContext";
+import { useAuth } from "../context/AuthContext";
 import {
   countCategoryProducts,
   createCategory,
   deleteCategory,
   updateCategory,
+  uniqueCategorySlug,
   validateCategory,
   type CategoryInput,
 } from "../lib/categories";
-import { slugify } from "../lib/products";
 import type { CategoryFull } from "../types/catalogue";
 
 const shell =
@@ -37,10 +38,10 @@ const EMPTY: CategoryInput = {
 export default function Categories() {
   const { categories, loading, error, reload } = useCategoriesFull();
   const { notify } = useToast();
+  const { can } = useAuth();
 
   const [form, setForm] = useState<CategoryInput>(EMPTY);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [slugEdited, setSlugEdited] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -64,7 +65,6 @@ export default function Categories() {
   const resetForm = () => {
     setForm(EMPTY);
     setEditingId(null);
-    setSlugEdited(false);
     setFormError(null);
   };
 
@@ -80,7 +80,6 @@ export default function Categories() {
 
   const startEdit = (c: CategoryFull) => {
     setEditingId(c.id);
-    setSlugEdited(true);
     setFormError(null);
     setForm({
       name: c.name,
@@ -97,10 +96,17 @@ export default function Categories() {
     e.preventDefault();
     setFormError(null);
 
+    // Slug is auto-generated from the name (never shown). On create it's made
+    // unique with a -1, -2… suffix; on edit the existing slug is kept.
+    const name = form.name.trim();
+    const slug = editingId
+      ? form.slug
+      : uniqueCategorySlug(name, categories);
+
     const payload: CategoryInput = {
       ...form,
-      name: form.name.trim(),
-      slug: form.slug.trim(),
+      name,
+      slug,
       description: form.description?.trim() || null,
       image_url: form.image_url?.trim() || null,
     };
@@ -135,17 +141,24 @@ export default function Categories() {
 
   const handleDelete = async (c: CategoryFull) => {
     const used = await countCategoryProducts(c.id);
+    // Can't delete a category that still has products assigned — reassign first.
+    if (used > 0) {
+      return notify(
+        "error",
+        "Can't delete this category",
+        `"${c.name}" has ${used} product${
+          used > 1 ? "s" : ""
+        } assigned. Move ${used > 1 ? "them" : "it"} to another category first.`
+      );
+    }
+
     const children = categories.filter((x) => x.parent_id === c.id).length;
-
-    const notes: string[] = [];
-    if (used > 0)
-      notes.push(`${used} product${used > 1 ? "s" : ""} will become uncategorised`);
-    if (children > 0)
-      notes.push(`${children} sub-categor${children > 1 ? "ies" : "y"} will lose its parent`);
-
-    const msg = notes.length
-      ? `Delete "${c.name}"? ${notes.join(" and ")}. Products are not deleted.`
-      : `Delete "${c.name}"?`;
+    const msg =
+      children > 0
+        ? `Delete "${c.name}"? ${children} sub-categor${
+            children > 1 ? "ies" : "y"
+          } will lose its parent.`
+        : `Delete "${c.name}"?`;
     if (!window.confirm(msg)) return;
 
     const { error } = await deleteCategory(c.id);
@@ -170,6 +183,7 @@ export default function Categories() {
 
       <div className="space-y-6">
         <div className="flex justify-end">
+          {can("category", "add") && (
           <button
             type="button"
             onClick={startAdd}
@@ -177,6 +191,7 @@ export default function Categories() {
           >
             + Add category
           </button>
+          )}
         </div>
 
         {/* Create / edit form, in a modal */}
@@ -197,22 +212,7 @@ export default function Categories() {
               </Label>
               <Input
                 value={form.name}
-                onChange={(e) => {
-                  set("name", e.target.value);
-                  if (!slugEdited) set("slug", slugify(e.target.value));
-                }}
-              />
-            </div>
-            <div>
-              <Label>
-                Slug <span className="text-error-500">*</span>
-              </Label>
-              <Input
-                value={form.slug}
-                onChange={(e) => {
-                  set("slug", e.target.value);
-                  setSlugEdited(true);
-                }}
+                onChange={(e) => set("name", e.target.value)}
               />
             </div>
             <div>
@@ -232,14 +232,6 @@ export default function Categories() {
                     </option>
                   ))}
               </select>
-            </div>
-            <div>
-              <Label>Position</Label>
-              <Input
-                type="number"
-                value={String(form.position)}
-                onChange={(e) => set("position", Number(e.target.value) || 0)}
-              />
             </div>
           </div>
 
@@ -318,14 +310,12 @@ export default function Categories() {
             <ListToolbar
               query={controls.query}
               onQuery={controls.setQuery}
-              placeholder="Search name, slug or description"
+              placeholder="Search name or description"
               sortKey={controls.sortKey}
               onSortKey={controls.setSortKey}
               sortOptions={[
                 { value: "name", label: "Name" },
-                { value: "slug", label: "Slug" },
                 { value: "products", label: "Products" },
-                { value: "position", label: "Position" },
               ]}
               dir={controls.dir}
               onToggleDir={controls.toggleDir}
@@ -364,8 +354,9 @@ export default function Categories() {
                     {c.name}
                   </span>
                   <span className="block text-theme-xs text-gray-500 dark:text-gray-400">
-                    /{c.slug}
-                    {c.parent_id && ` · under ${nameOf(c.parent_id)}`}
+                    {c.parent_id
+                      ? `Under ${nameOf(c.parent_id)}`
+                      : "Top level"}
                   </span>
                 </div>
 
@@ -374,6 +365,7 @@ export default function Categories() {
                 </span>
 
                 <div className="flex gap-2">
+                  {can("category", "edit") && (
                   <button
                     type="button"
                     onClick={() => startEdit(c)}
@@ -381,6 +373,8 @@ export default function Categories() {
                   >
                     Edit
                   </button>
+                  )}
+                  {can("category", "delete") && (
                   <button
                     type="button"
                     onClick={() => handleDelete(c)}
@@ -388,6 +382,7 @@ export default function Categories() {
                   >
                     Delete
                   </button>
+                  )}
                 </div>
               </div>
                 ))}

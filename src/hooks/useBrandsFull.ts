@@ -19,7 +19,9 @@ export function useBrandsFull() {
 
     const { data, error } = await supabase
       .from("brands")
-      .select("id, name, slug, description, logo_url, position")
+      .select(
+        "id, name, slug, description, logo_url, position, company_id, created_at, updated_at"
+      )
       .order("position")
       .order("name");
 
