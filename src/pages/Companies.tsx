@@ -235,19 +235,36 @@ export default function Companies() {
 
             <div className="mt-5">
               <Label>Logo</Label>
-              <div className="flex gap-2">
-                <Input
-                  value={form.logo_url ?? ""}
-                  placeholder="Logo URL (optional)"
-                  onChange={(e) => set("logo_url", e.target.value)}
-                />
-                <button
-                  type="button"
-                  onClick={() => setPickerOpen(true)}
-                  className="h-11 shrink-0 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
-                >
-                  Choose
-                </button>
+              <div className="flex items-center gap-3">
+                {form.logo_url ? (
+                  <img
+                    src={form.logo_url}
+                    alt="Logo"
+                    className="object-contain w-16 h-16 rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-white/[0.06]"
+                  />
+                ) : (
+                  <div className="flex items-center justify-center w-16 h-16 rounded-lg border border-dashed border-gray-300 text-theme-xs text-gray-400 dark:border-gray-700">
+                    No logo
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPickerOpen(true)}
+                    className="h-11 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+                  >
+                    {form.logo_url ? "Change logo" : "Choose logo"}
+                  </button>
+                  {form.logo_url && (
+                    <button
+                      type="button"
+                      onClick={() => set("logo_url", null)}
+                      className="h-11 rounded-lg px-3 text-sm font-medium text-gray-400 hover:text-error-500"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 

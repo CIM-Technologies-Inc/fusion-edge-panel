@@ -4,6 +4,7 @@ import PageMeta from "../components/common/PageMeta";
 import Label from "../components/form/Label";
 import Input from "../components/form/input/InputField";
 import MediaPicker from "../components/media/MediaPicker";
+import ActivityLog from "../components/common/ActivityLog";
 import { Modal } from "../components/ui/modal";
 import { ListToolbar, Pager } from "../components/common/ListControls";
 import { useCategoriesFull } from "../hooks/useCategoriesFull";
@@ -38,7 +39,7 @@ const EMPTY: CategoryInput = {
 export default function Categories() {
   const { categories, loading, error, reload } = useCategoriesFull();
   const { notify } = useToast();
-  const { can } = useAuth();
+  const { can, isAdmin } = useAuth();
 
   const [form, setForm] = useState<CategoryInput>(EMPTY);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -46,6 +47,7 @@ export default function Categories() {
   const [saving, setSaving] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [showActivity, setShowActivity] = useState(false);
 
   const controls = useTableControls({
     rows: categories,
@@ -70,6 +72,7 @@ export default function Categories() {
 
   const closeModal = () => {
     setModalOpen(false);
+    setShowActivity(false);
     resetForm();
   };
 
@@ -247,24 +250,63 @@ export default function Categories() {
 
           <div className="mt-5">
             <Label>Image</Label>
-            <div className="flex gap-2">
-              <Input
-                value={form.image_url ?? ""}
-                placeholder="Image URL (optional)"
-                onChange={(e) => set("image_url", e.target.value)}
-              />
-              <button
-                type="button"
-                onClick={() => setPickerOpen(true)}
-                className="h-11 shrink-0 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
-              >
-                Choose
-              </button>
+            <div className="flex items-center gap-3">
+              {form.image_url ? (
+                <img
+                  src={form.image_url}
+                  alt="Category"
+                  className="object-contain w-16 h-16 rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-white/[0.06]"
+                />
+              ) : (
+                <div className="flex items-center justify-center w-16 h-16 rounded-lg border border-dashed border-gray-300 text-theme-xs text-gray-400 dark:border-gray-700">
+                  No image
+                </div>
+              )}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPickerOpen(true)}
+                  className="h-11 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+                >
+                  {form.image_url ? "Change image" : "Choose image"}
+                </button>
+                {form.image_url && (
+                  <button
+                    type="button"
+                    onClick={() => set("image_url", null)}
+                    className="h-11 rounded-lg px-3 text-sm font-medium text-gray-400 hover:text-error-500"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
           {formError && (
             <p className="mt-4 text-sm text-error-500">{formError}</p>
+          )}
+
+          {/* Activity log for this category (admins, when editing). On demand. */}
+          {editingId && isAdmin && (
+            <div className="pt-5 mt-5 border-t border-gray-100 dark:border-gray-800">
+              <button
+                type="button"
+                onClick={() => setShowActivity((s) => !s)}
+                className="text-sm font-medium text-brand-500 hover:text-brand-600"
+              >
+                {showActivity ? "Hide activity" : "View activity"}
+              </button>
+              {showActivity && (
+                <div className="mt-3">
+                  <ActivityLog
+                    table="categories"
+                    recordId={editingId}
+                    limit={15}
+                  />
+                </div>
+              )}
+            </div>
           )}
 
             <div className="flex justify-end gap-3 mt-6">

@@ -217,7 +217,7 @@ export default function Product() {
             >
               Refresh
             </button>
-            {can("product", "edit") && (
+            {can("product", "view") && (
               <Link
                 to="/product/bulk-prices"
                 className="inline-flex items-center h-11 px-4 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
@@ -266,7 +266,11 @@ export default function Product() {
         ) : (
           <ProductTable
             products={visible}
-            canEdit={can("product", "edit")}
+            canEdit={
+              can("product", "edit") ||
+              can("product", "stock") ||
+              can("product", "price")
+            }
             onDuplicate={can("product", "add") ? handleDuplicate : undefined}
             onDelete={can("product", "delete") ? handleDelete : undefined}
             duplicatingId={duplicatingId}

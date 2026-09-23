@@ -5,6 +5,7 @@ import PageMeta from "../components/common/PageMeta";
 import Label from "../components/form/Label";
 import Input from "../components/form/input/InputField";
 import MediaPicker from "../components/media/MediaPicker";
+import ActivityLog from "../components/common/ActivityLog";
 import { Modal } from "../components/ui/modal";
 import { useCompaniesFull } from "../hooks/useCompaniesFull";
 import { useBrandsFull } from "../hooks/useBrandsFull";
@@ -74,6 +75,7 @@ export default function CompanyDetail() {
   const [saving, setSaving] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [showActivity, setShowActivity] = useState(false);
 
   const set = <K extends keyof BrandInput>(k: K, v: BrandInput[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -363,6 +365,28 @@ export default function CompanyDetail() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Activity log for this company (admins). Loaded on demand. */}
+        {isAdmin && (
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowActivity((s) => !s)}
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-500 hover:text-brand-600"
+            >
+              {showActivity ? "Hide activity" : "View activity"}
+            </button>
+            {showActivity && (
+              <div className={`${shell} mt-3`}>
+                <ActivityLog
+                  table="companies"
+                  recordId={company.id}
+                  limit={20}
+                />
+              </div>
+            )}
           </div>
         )}
       </div>
