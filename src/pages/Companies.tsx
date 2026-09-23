@@ -19,7 +19,7 @@ import {
   deleteCompany,
   updateCompany,
   validateCompany,
-  slugify,
+  uniqueCompanySlug,
   type CompanyInput,
 } from "../lib/companies";
 import type { CompanyFull } from "../types/catalogue";
@@ -44,7 +44,6 @@ export default function Companies() {
 
   const [form, setForm] = useState<CompanyInput>(EMPTY);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [slugEdited, setSlugEdited] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -72,7 +71,6 @@ export default function Companies() {
   const resetForm = () => {
     setForm(EMPTY);
     setEditingId(null);
-    setSlugEdited(false);
     setFormError(null);
   };
 
@@ -88,7 +86,6 @@ export default function Companies() {
 
   const startEdit = (c: CompanyFull) => {
     setEditingId(c.id);
-    setSlugEdited(true);
     setFormError(null);
     setForm({
       name: c.name,
@@ -104,10 +101,18 @@ export default function Companies() {
     e.preventDefault();
     setFormError(null);
 
+    // Slug is derived from the (unique) name and never shown. On create it's
+    // made unique with a -1, -2… suffix; on edit the existing slug is kept so
+    // brand slugs (company-slug/brand) don't drift.
+    const name = form.name.trim();
+    const slug = editingId
+      ? form.slug
+      : uniqueCompanySlug(name, companies);
+
     const payload: CompanyInput = {
       ...form,
-      name: form.name.trim(),
-      slug: form.slug.trim(),
+      name,
+      slug,
       description: form.description?.trim() || null,
       logo_url: form.logo_url?.trim() || null,
     };
@@ -201,22 +206,7 @@ export default function Companies() {
                 </Label>
                 <Input
                   value={form.name}
-                  onChange={(e) => {
-                    set("name", e.target.value);
-                    if (!slugEdited) set("slug", slugify(e.target.value));
-                  }}
-                />
-              </div>
-              <div>
-                <Label>
-                  Slug <span className="text-error-500">*</span>
-                </Label>
-                <Input
-                  value={form.slug}
-                  onChange={(e) => {
-                    set("slug", e.target.value);
-                    setSlugEdited(true);
-                  }}
+                  onChange={(e) => set("name", e.target.value)}
                 />
               </div>
               <div>
@@ -317,12 +307,11 @@ export default function Companies() {
             <ListToolbar
               query={controls.query}
               onQuery={controls.setQuery}
-              placeholder="Search name, slug or description"
+              placeholder="Search name or description"
               sortKey={controls.sortKey}
               onSortKey={controls.setSortKey}
               sortOptions={[
                 { value: "name", label: "Name" },
-                { value: "slug", label: "Slug" },
                 { value: "brands", label: "Brands" },
                 { value: "position", label: "Position" },
               ]}

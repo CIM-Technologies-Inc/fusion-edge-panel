@@ -10,6 +10,25 @@ export type CompanyInput = {
   position: number;
 };
 
+/**
+ * A slug for a company, derived from its (unique) name. Kept unique with a
+ * -1, -2… suffix as a safety net, though names are already unique.
+ */
+export function uniqueCompanySlug(
+  name: string,
+  existing: CompanyFull[],
+  editingId?: string
+): string {
+  const base = slugify(name) || "company";
+  const taken = new Set(
+    existing.filter((c) => c.id !== editingId).map((c) => c.slug)
+  );
+  if (!taken.has(base)) return base;
+  let n = 1;
+  while (taken.has(`${base}-${n}`)) n++;
+  return `${base}-${n}`;
+}
+
 /** Mirrors the DB rules so the form can flag problems before the round-trip. */
 export function validateCompany(
   input: CompanyInput,
@@ -17,14 +36,13 @@ export function validateCompany(
   editingId?: string
 ): string | null {
   if (!input.name.trim()) return "Name is required.";
-  if (!input.slug.trim()) return "Slug is required.";
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(input.slug))
-    return "Slug must be lowercase words separated by hyphens.";
 
+  // The name is the unique identifier (case-insensitive); the slug is derived.
+  const name = input.name.trim().toLowerCase();
   const clash = existing.some(
-    (c) => c.slug === input.slug && c.id !== editingId
+    (c) => c.name.trim().toLowerCase() === name && c.id !== editingId
   );
-  if (clash) return "That slug is already used by another company.";
+  if (clash) return "That company name is already used.";
 
   return null;
 }
