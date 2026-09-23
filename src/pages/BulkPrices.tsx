@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router";
 import PageBreadcrumb from "../components/common/PageBreadCrumb";
 import PageMeta from "../components/common/PageMeta";
 import Badge from "../components/ui/badge/Badge";
@@ -206,7 +207,12 @@ export default function BulkPrices() {
                       <tr className="border-b border-gray-50 bg-gray-50/60 dark:border-gray-800/60 dark:bg-white/[0.02]">
                         <td className="px-5 py-3">
                           <span className="inline-flex items-center gap-2 font-medium text-gray-800 dark:text-white/90">
-                            {p.name}
+                            <Link
+                              to={`/product/${p.slug}`}
+                              className="hover:text-brand-500"
+                            >
+                              {p.name}
+                            </Link>
                             <Badge size="sm" color="info">
                               variable
                             </Badge>
@@ -279,7 +285,12 @@ export default function BulkPrices() {
                     >
                       <td className="px-5 py-3">
                         <span className="inline-flex items-center gap-2 font-medium text-gray-800 dark:text-white/90">
-                          {p.name}
+                          <Link
+                            to={`/product/${p.slug}`}
+                            className="hover:text-brand-500"
+                          >
+                            {p.name}
+                          </Link>
                           <Badge size="sm" color="light">
                             simple
                           </Badge>
