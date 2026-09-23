@@ -19,6 +19,8 @@ type Props = {
   canUpload?: boolean;
   canEdit?: boolean;
   canDelete?: boolean;
+  /** Lock the grid to one file kind and hide the filter tabs (e.g. rfa picker). */
+  only?: "image" | "rfa";
 };
 
 export default function MediaGrid({
@@ -27,6 +29,7 @@ export default function MediaGrid({
   canUpload = true,
   canEdit = true,
   canDelete = true,
+  only,
 }: Props) {
   const { notify } = useToast();
   const [files, setFiles] = useState<MediaFile[]>([]);
@@ -40,7 +43,9 @@ export default function MediaGrid({
     name: string;
     file: File;
   } | null>(null);
-  const [filter, setFilter] = useState<"all" | "image" | "rfa">("image");
+  const [filter, setFilter] = useState<"all" | "image" | "rfa">(
+    only ?? "image"
+  );
   const inputRef = useRef<HTMLInputElement>(null);
   const rfaInputRef = useRef<HTMLInputElement>(null);
 
@@ -151,10 +156,14 @@ export default function MediaGrid({
     /\.(png|jpe?g|gif|webp|avif|svg|bmp|ico)$/i.test(name);
   const isRfa = (name: string) => /\.rfa$/i.test(name);
 
+  // When `only` is set the grid is locked to that kind (the tabs are hidden),
+  // so it always wins over the tab state — even if this instance is reused.
+  const effectiveFilter = only ?? filter;
+
   const visibleFiles = files.filter((f) =>
-    filter === "image"
+    effectiveFilter === "image"
       ? isImage(f.name)
-      : filter === "rfa"
+      : effectiveFilter === "rfa"
       ? isRfa(f.name)
       : true
   );
@@ -175,14 +184,16 @@ export default function MediaGrid({
       <div className="flex flex-wrap items-center gap-2 mb-4">
         {canUpload && (
           <>
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              disabled={busy}
-              className="inline-flex items-center h-11 px-4 text-sm font-medium text-white rounded-lg bg-brand-500 hover:bg-brand-600 disabled:opacity-50"
-            >
-              {busy ? "Uploading…" : "Upload images"}
-            </button>
+            {effectiveFilter !== "rfa" && (
+              <button
+                type="button"
+                onClick={() => inputRef.current?.click()}
+                disabled={busy}
+                className="inline-flex items-center h-11 px-4 text-sm font-medium text-white rounded-lg bg-brand-500 hover:bg-brand-600 disabled:opacity-50"
+              >
+                {busy ? "Uploading…" : "Upload images"}
+              </button>
+            )}
             <input
               ref={inputRef}
               type="file"
@@ -191,14 +202,16 @@ export default function MediaGrid({
               hidden
               onChange={(e) => handleUpload(e.target.files)}
             />
-            <button
-              type="button"
-              onClick={() => rfaInputRef.current?.click()}
-              disabled={busy}
-              className="inline-flex items-center h-11 px-4 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
-            >
-              {busy ? "Uploading…" : "Upload RFA"}
-            </button>
+            {effectiveFilter !== "image" && (
+              <button
+                type="button"
+                onClick={() => rfaInputRef.current?.click()}
+                disabled={busy}
+                className="inline-flex items-center h-11 px-4 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+              >
+                {busy ? "Uploading…" : "Upload RFA"}
+              </button>
+            )}
             <input
               ref={rfaInputRef}
               type="file"
@@ -209,29 +222,31 @@ export default function MediaGrid({
             />
           </>
         )}
-        {/* Filter by file kind. */}
-        <div className="inline-flex h-11 ml-auto overflow-hidden rounded-lg border border-gray-300 dark:border-gray-700">
-          {(
-            [
-              { key: "all", label: "All" },
-              { key: "image", label: "Images" },
-              { key: "rfa", label: "RFA" },
-            ] as const
-          ).map((opt) => (
-            <button
-              key={opt.key}
-              type="button"
-              onClick={() => setFilter(opt.key)}
-              className={`px-4 text-sm font-medium transition ${
-                filter === opt.key
-                  ? "bg-brand-500 text-white"
-                  : "text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-white/[0.03]"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
+        {/* Filter by file kind — hidden when locked to one kind (only). */}
+        {!only && (
+          <div className="inline-flex h-11 ml-auto overflow-hidden rounded-lg border border-gray-300 dark:border-gray-700">
+            {(
+              [
+                { key: "all", label: "All" },
+                { key: "image", label: "Images" },
+                { key: "rfa", label: "RFA" },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => setFilter(opt.key)}
+                className={`px-4 text-sm font-medium transition ${
+                  filter === opt.key
+                    ? "bg-brand-500 text-white"
+                    : "text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
         <button
           type="button"
           onClick={load}
@@ -251,7 +266,7 @@ export default function MediaGrid({
         </p>
       ) : visibleFiles.length === 0 ? (
         <p className="text-sm text-gray-500 dark:text-gray-400">
-          No {filter === "rfa" ? "RFA files" : "images"} yet.
+          No {effectiveFilter === "rfa" ? "RFA files" : "images"} yet.
         </p>
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">

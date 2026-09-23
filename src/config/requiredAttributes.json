@@ -1,5 +1,5 @@
 {
-  "$comment": "Required attributes per product category. Matched by category slug (case-insensitive). Each attribute: name (slug), label, type (text|number|url|color|image), required, optional default (pre-filled value), and optional disabled:true (shown but not editable — use with default to lock a fixed value).",
+  "$comment": "Required attributes per product category. Matched by category slug (case-insensitive). Each attribute: name (slug), label, type (text|number|url|color|image|rfa), required, optional default (pre-filled value), and optional disabled:true (shown but not editable — use with default to lock a fixed value). Type 'rfa' picks a .rfa file from the media library.",
   "version": 1,
   "categories": {
     "tiles": {
@@ -58,7 +58,7 @@
         }
       ]
       },
-      "furniture": {
+    "furniture": {
       "label": "Furniture",
       "attributes": [
         {
@@ -72,7 +72,58 @@
         {
           "name": "data-cim-url",
           "label": "URL",
-          "type": "image",
+          "type": "rfa",
+          "required": true
+        }
+      ]
+    },
+    "cornice": {
+      "label": "Cornice",
+      "attributes": [
+        {
+          "name": "data-cim-kind",
+          "label": "Kind",
+          "type": "text",
+          "required": true,
+          "default": "rfa",
+          "disabled": true
+        },
+        {
+          "name": "data-cim-url",
+          "label": "URL",
+          "type": "rfa",
+          "required": true
+        },
+        {
+          "name": "data-cim-rfa-kind",
+          "label": "RFA kind",
+          "type": "text",
+          "required": true,
+          "default": "cornice",
+          "disabled": true
+        },
+        {
+          "name": "data-cim-cornice-width",
+          "label": "Cornice Width (mm)",
+          "type": "number",
+          "required": true
+        },
+        {
+          "name": "data-cim-cornice-length",
+          "label": "Cornice Height (ft)",
+          "type": "number",
+          "required": true
+        },
+        {
+          "name": "data-cim-cornice-thickness",
+          "label": "Cornice Thickness (mm)",
+          "type": "number",
+          "required": true
+        },
+        {
+          "name": "data-cim-cornice-material",
+          "label": "Cornice Material",
+          "type": "text",
           "required": true
         }
       ]

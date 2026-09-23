@@ -11,6 +11,20 @@ import {
 } from "../../lib/attributes";
 import type { AttributeWithTerms, DisplayType } from "../../types/catalogue";
 
+/**
+ * Short label for a value chip. URL/path values (e.g. an RFA file link) show
+ * just the filename; everything else shows as-is. The full value stays on the
+ * chip's title (hover) and is what's saved.
+ */
+function valueLabel(value: string): string {
+  const v = value.trim();
+  if (/^https?:\/\/|^\//.test(v)) {
+    const last = v.split(/[?#]/)[0].split("/").pop();
+    if (last) return decodeURIComponent(last);
+  }
+  return value;
+}
+
 /** A value typed on the New page, not yet written to the database. */
 export type PendingTerm = {
   /** Temporary id (tmp:…) used only in the UI until the product is created. */
@@ -142,7 +156,11 @@ export default function AttributeBuilder({
   };
 
   const used = new Set(value.map((a) => a.attribute_id));
-  const available = pool.filter((a) => !used.has(a.id));
+  // Hide "data-…" attributes (CIM config/required fields managed per category)
+  // from the manual "Add existing attribute" list.
+  const isConfigAttr = (a: AttributeWithTerms) =>
+    /^data-/i.test(a.slug ?? "") || /^data-/i.test(a.name ?? "");
+  const available = pool.filter((a) => !used.has(a.id) && !isConfigAttr(a));
 
   const addAssignment = (attributeId: string) => {
     if (!attributeId || used.has(attributeId)) return;
@@ -188,7 +206,9 @@ export default function AttributeBuilder({
 
   const handleCreateAttribute = async () => {
     if (!newAttrName.trim()) return;
-    const { data, error } = await createAttribute(newAttrName, newAttrType);
+    // Simple products don't expose the Display selector — force plain text.
+    const type: DisplayType = isVariable ? newAttrType : "select";
+    const { data, error } = await createAttribute(newAttrName, type);
     if (error || !data) {
       notify("error", "Could not create attribute", error ?? "Failed.");
       return;
@@ -204,12 +224,13 @@ export default function AttributeBuilder({
     const name = (termDraft[attr.id] ?? "").trim();
     if (!name) return;
 
-    // The swatch column carries a hex for color, an image URL for image,
-    // and nothing for the plain (select/button) types.
+    // The swatch column carries a hex for color, an image URL for image, and
+    // nothing for the plain types. On a simple product every value is plain
+    // spec text, so no swatch/image is collected regardless of display type.
     let swatch: string | null = null;
-    if (attr.display_type === "color") {
+    if (isVariable && attr.display_type === "color") {
       swatch = swatchDraft[attr.id] ?? "#000000";
-    } else if (attr.display_type === "image") {
+    } else if (isVariable && attr.display_type === "image") {
       const url = (imageDraft[attr.id] ?? "").trim();
       if (!url) {
         notify("error", "Image URL required", "Add an image URL for this value.");
@@ -287,19 +308,24 @@ export default function AttributeBuilder({
               onChange={(e) => setNewAttrName(e.target.value)}
             />
           </div>
-          <div>
-            <Label>Display</Label>
-            <select
-              value={newAttrType}
-              onChange={(e) => setNewAttrType(e.target.value as DisplayType)}
-              className="h-11 rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
-            >
-              <option value="select">Dropdown</option>
-              <option value="button">Button</option>
-              <option value="color">Color swatch</option>
-              <option value="image">Image</option>
-            </select>
-          </div>
+          {/* "Display" controls how buyers PICK a variation option, so it only
+              applies to variable products. On a simple product an attribute is
+              plain spec text — the selector would just be confusing. */}
+          {isVariable && (
+            <div>
+              <Label>Display</Label>
+              <select
+                value={newAttrType}
+                onChange={(e) => setNewAttrType(e.target.value as DisplayType)}
+                className="h-11 rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+              >
+                <option value="select">Dropdown</option>
+                <option value="button">Button</option>
+                <option value="color">Color swatch</option>
+                <option value="image">Image</option>
+              </select>
+            </div>
+          )}
           <button
             type="button"
             onClick={handleCreateAttribute}
@@ -360,6 +386,7 @@ export default function AttributeBuilder({
                     <button
                       type="button"
                       onClick={() => toggleTerm(attr.id, t.id)}
+                      title={t.name}
                       className={`flex h-full items-center pl-3 ${
                         editable ? "pr-1.5" : "pr-3"
                       }`}
@@ -377,7 +404,9 @@ export default function AttributeBuilder({
                           className="inline-block object-cover w-4 h-4 mr-1.5 rounded align-middle"
                         />
                       )}
-                      {t.name}
+                      <span className="max-w-[220px] truncate">
+                        {valueLabel(t.name)}
+                      </span>
                     </button>
                     {editable && (
                       <button
@@ -418,8 +447,9 @@ export default function AttributeBuilder({
               )}
             </div>
 
-            {/* Add a new value to this global attribute */}
-            {attr.display_type === "image" && (
+            {/* Add a new value to this global attribute. On a simple product a
+                value is plain spec text, so the color/image extras are hidden. */}
+            {isVariable && attr.display_type === "image" && (
               <div className="flex gap-2">
                 <Input
                   value={imageDraft[attr.id] ?? ""}
@@ -438,7 +468,7 @@ export default function AttributeBuilder({
               </div>
             )}
             <div className="flex gap-2 mt-2 mb-3">
-              {attr.display_type === "color" && (
+              {isVariable && attr.display_type === "color" && (
                 <input
                   type="color"
                   aria-label={`${attr.name} swatch color`}
@@ -452,9 +482,9 @@ export default function AttributeBuilder({
               <Input
                 value={termDraft[attr.id] ?? ""}
                 placeholder={
-                  attr.display_type === "color"
+                  isVariable && attr.display_type === "color"
                     ? `${attr.name} name (+ pick a color)…`
-                    : attr.display_type === "image"
+                    : isVariable && attr.display_type === "image"
                     ? `${attr.name} name (+ URL above)…`
                     : `Add a ${attr.name} value…`
                 }
