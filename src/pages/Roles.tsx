@@ -29,9 +29,10 @@ const shell =
 // (Categories, Users) don't apply, it can't manage companies itself, and it
 // can't approve products (a company can't approve its own submissions) — so
 // the matrix hides those rows for such roles.
+// Users is now allowed for company roles (they manage their own company's
+// users). Categories, Company management, and Approval stay admin/staff-only.
 const COMPANY_HIDDEN_RESOURCES = new Set([
   "category",
-  "users",
   "company",
   "approval",
 ]);
@@ -41,10 +42,12 @@ const matrixResources = (isCompany: boolean) =>
     : [...RESOURCES];
 
 export default function Roles() {
-  const { roles, loading, reload } = useRoles();
+  const { roles, rolePerms, loading, reload } = useRoles();
   const { notify } = useToast();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Which role's full permission list is expanded in the list.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [isCompany, setIsCompany] = useState(false);
@@ -233,21 +236,28 @@ export default function Roles() {
               </p>
             ) : (
               <ul>
-                {roles.map((r) => (
-                  <li key={r.id}>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedId(r.id)}
-                      className={`flex w-full items-center justify-between gap-2 border-b border-gray-50 px-5 py-3 text-left last:border-0 dark:border-gray-800/60 ${
-                        selectedId === r.id
-                          ? "bg-brand-50 dark:bg-brand-500/10"
-                          : "hover:bg-gray-50 dark:hover:bg-white/[0.03]"
-                      }`}
+                {roles.map((r) => {
+                  const perms = rolePerms.get(r.id) ?? [];
+                  const isOpen = expandedId === r.id;
+                  return (
+                    <li
+                      key={r.id}
+                      className="border-b border-gray-50 last:border-0 dark:border-gray-800/60"
                     >
-                      <span className="font-medium text-gray-800 dark:text-white/90">
-                        {r.name}
-                      </span>
-                      <span className="flex items-center gap-1.5">
+                      <div
+                        className={`flex w-full items-center gap-2 px-5 py-3 ${
+                          selectedId === r.id
+                            ? "bg-brand-50 dark:bg-brand-500/10"
+                            : "hover:bg-gray-50 dark:hover:bg-white/[0.03]"
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setSelectedId(r.id)}
+                          className="flex-1 text-left font-medium text-gray-800 dark:text-white/90"
+                        >
+                          {r.name}
+                        </button>
                         {r.is_company && (
                           <Badge size="sm" color="primary">
                             company
@@ -258,10 +268,63 @@ export default function Roles() {
                             system
                           </Badge>
                         )}
-                      </span>
-                    </button>
-                  </li>
-                ))}
+                        {/* Total permissions — click to show all. */}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedId(isOpen ? null : r.id)
+                          }
+                          title="Show all permissions"
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-theme-xs font-medium ${
+                            isOpen
+                              ? "bg-brand-500 text-white"
+                              : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300"
+                          }`}
+                        >
+                          {r.is_system ? "all" : perms.length}
+                          <svg
+                            className={`w-3 h-3 transition-transform ${
+                              isOpen ? "rotate-180" : ""
+                            }`}
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="m6 9 6 6 6-6" />
+                          </svg>
+                        </button>
+                      </div>
+
+                      {isOpen && (
+                        <div className="px-5 pb-3">
+                          {r.is_system ? (
+                            <p className="text-theme-xs text-gray-400">
+                              Full access to everything.
+                            </p>
+                          ) : perms.length === 0 ? (
+                            <p className="text-theme-xs text-gray-400">
+                              No permissions granted.
+                            </p>
+                          ) : (
+                            <div className="flex flex-wrap gap-1.5">
+                              {perms.map((p) => (
+                                <span
+                                  key={p}
+                                  className="rounded-md bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600 dark:bg-white/[0.06] dark:text-gray-300"
+                                >
+                                  {p}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>
@@ -444,6 +507,51 @@ export default function Roles() {
                     <span className="block text-theme-xs text-gray-400">
                       Lets this role mark products as Featured (they sort to the
                       top).
+                    </span>
+                  </span>
+                </label>
+              )}
+
+              {/* Extra product action: edit stock. Available to any role
+                  (company or staff). */}
+              {!selected.is_system && (
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={perms.has("product.stock")}
+                    disabled={loadingPerms}
+                    onChange={() => toggle("product.stock")}
+                    className="w-4 h-4 mt-0.5 rounded accent-brand-500 disabled:opacity-50"
+                  />
+                  <span>
+                    <span className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Edit stock
+                    </span>
+                    <span className="block text-theme-xs text-gray-400">
+                      Lets this role change a product's inventory quantity
+                      without full edit access.
+                    </span>
+                  </span>
+                </label>
+              )}
+
+              {/* Extra product action: edit pricing (price + sale price). */}
+              {!selected.is_system && (
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={perms.has("product.price")}
+                    disabled={loadingPerms}
+                    onChange={() => toggle("product.price")}
+                    className="w-4 h-4 mt-0.5 rounded accent-brand-500 disabled:opacity-50"
+                  />
+                  <span>
+                    <span className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Edit pricing
+                    </span>
+                    <span className="block text-theme-xs text-gray-400">
+                      Lets this role change a product's price and sale price
+                      without full edit access.
                     </span>
                   </span>
                 </label>

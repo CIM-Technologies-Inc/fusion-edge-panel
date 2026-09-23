@@ -16,6 +16,8 @@ export function useRoles() {
   const [roleResources, setRoleResources] = useState<Map<string, Set<string>>>(
     new Map()
   );
+  // role_id -> sorted list of "resource.action" permission keys.
+  const [rolePerms, setRolePerms] = useState<Map<string, string[]>>(new Map());
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -27,19 +29,26 @@ export function useRoles() {
         .select("id, name, description, is_system, is_company")
         .order("is_system", { ascending: false })
         .order("name"),
-      supabase.from("role_permissions").select("role_id, resource"),
+      supabase.from("role_permissions").select("role_id, resource, action"),
     ]);
     setRoles((rolesRes.data as Role[]) ?? []);
 
     const map = new Map<string, Set<string>>();
+    const permMap = new Map<string, string[]>();
     for (const p of permsRes.data ?? []) {
       const rid = (p as { role_id: string }).role_id;
       const res = (p as { resource: string }).resource;
+      const act = (p as { action: string }).action;
       const set = map.get(rid) ?? new Set<string>();
       set.add(res);
       map.set(rid, set);
+      const list = permMap.get(rid) ?? [];
+      list.push(`${res}.${act}`);
+      permMap.set(rid, list);
     }
+    for (const [k, v] of permMap) permMap.set(k, v.sort());
     setRoleResources(map);
+    setRolePerms(permMap);
     setLoading(false);
   }, []);
 
@@ -54,5 +63,12 @@ export function useRoles() {
     [roleResources]
   );
 
-  return { roles, roleResources, roleHasResource, loading, reload: load };
+  return {
+    roles,
+    roleResources,
+    rolePerms,
+    roleHasResource,
+    loading,
+    reload: load,
+  };
 }
