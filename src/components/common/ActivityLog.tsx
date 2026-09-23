@@ -36,6 +36,9 @@ type Props = {
   table?: string;
   recordId?: string;
   limit?: number;
+  /** Inclusive date bounds as ISO timestamps. */
+  from?: string;
+  to?: string;
   /** Show the record name/type per entry (useful on the global feed). */
   showRecord?: boolean;
 };
@@ -45,6 +48,8 @@ export default function ActivityLog({
   table,
   recordId,
   limit,
+  from,
+  to,
   showRecord,
 }: Props) {
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
@@ -52,10 +57,10 @@ export default function ActivityLog({
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { entries } = await loadActivity({ table, recordId, limit });
+    const { entries } = await loadActivity({ table, recordId, limit, from, to });
     setEntries(entries);
     setLoading(false);
-  }, [table, recordId, limit]);
+  }, [table, recordId, limit, from, to]);
 
   useEffect(() => {
     load();

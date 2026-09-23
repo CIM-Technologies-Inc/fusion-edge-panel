@@ -20,6 +20,9 @@ export async function loadActivity(opts?: {
   table?: string;
   recordId?: string;
   limit?: number;
+  /** Inclusive lower/upper bounds as ISO timestamps. */
+  from?: string;
+  to?: string;
 }): Promise<{ entries: ActivityEntry[]; error: string | null }> {
   let q = supabase
     .from("activity_log")
@@ -31,6 +34,8 @@ export async function loadActivity(opts?: {
 
   if (opts?.table) q = q.eq("table_name", opts.table);
   if (opts?.recordId) q = q.eq("record_id", opts.recordId);
+  if (opts?.from) q = q.gte("created_at", opts.from);
+  if (opts?.to) q = q.lte("created_at", opts.to);
 
   const { data, error } = await q;
   if (error) {
