@@ -13,6 +13,7 @@ import { deleteProduct, duplicateProduct } from "../lib/products";
 import type { Product as ProductType } from "../types/catalogue";
 
 type StatusFilter = "all" | "published" | "draft" | "pending" | "rejected";
+type SortKey = "name" | "created" | "updated";
 
 const shell =
   "rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/[0.03]";
@@ -42,6 +43,8 @@ export default function Product() {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
+  const [sortKey, setSortKey] = useState<SortKey>("created");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [categoryId, setCategoryId] = useState("");
   const [filterCompanyId, setFilterCompanyId] = useState("");
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
@@ -121,12 +124,19 @@ export default function Product() {
         (p.sku ?? "").toLowerCase().includes(q)
       );
     });
-    // Featured products float to the top; order within each group is preserved
-    // (products already arrive newest-first). .sort is stable.
+    // Featured products always float to the top; the chosen sort orders within
+    // each group. .sort is stable.
+    const dir = sortDir === "asc" ? 1 : -1;
+    const cmp = (a: ProductType, b: ProductType) => {
+      if (sortKey === "name") return a.name.localeCompare(b.name) * dir;
+      const av = (sortKey === "updated" ? a.updated_at : a.created_at) ?? "";
+      const bv = (sortKey === "updated" ? b.updated_at : b.created_at) ?? "";
+      return av.localeCompare(bv) * dir;
+    };
     return [...filtered].sort(
-      (a, b) => Number(!!b.featured) - Number(!!a.featured)
+      (a, b) => Number(!!b.featured) - Number(!!a.featured) || cmp(a, b)
     );
-  }, [products, query, status, categoryId, filterCompanyId]);
+  }, [products, query, status, categoryId, filterCompanyId, sortKey, sortDir]);
 
   return (
     <div>
@@ -183,6 +193,43 @@ export default function Product() {
               <option value="pending">Pending approval</option>
               <option value="rejected">Rejected</option>
             </select>
+            <div className="inline-flex">
+              <select
+                value={sortKey}
+                onChange={(e) => setSortKey(e.target.value as SortKey)}
+                aria-label="Sort by"
+                className="h-11 rounded-l-lg border border-gray-300 bg-transparent px-4 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+              >
+                <option value="created">Date created</option>
+                <option value="updated">Date updated</option>
+                <option value="name">Name</option>
+              </select>
+              <button
+                type="button"
+                onClick={() =>
+                  setSortDir((d) => (d === "asc" ? "desc" : "asc"))
+                }
+                title={sortDir === "asc" ? "Ascending" : "Descending"}
+                aria-label={
+                  sortDir === "asc" ? "Sort ascending" : "Sort descending"
+                }
+                className="flex h-11 w-11 items-center justify-center rounded-r-lg border border-l-0 border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+              >
+                <svg
+                  className={`h-4 w-4 transition-transform ${
+                    sortDir === "asc" ? "rotate-180" : ""
+                  }`}
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M12 5v14M5 12l7 7 7-7" />
+                </svg>
+              </button>
+            </div>
             {(query || categoryId || filterCompanyId || status !== "all") && (
               <button
                 type="button"

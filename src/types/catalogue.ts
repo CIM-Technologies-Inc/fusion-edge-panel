@@ -147,6 +147,7 @@ export type Product = {
   /** Reason an admin gave when rejecting; shown to the company-user. */
   rejection_reason?: string | null;
   created_at: string;
+  updated_at?: string | null;
   /** Optional URL to a glTF/GLB 3D model. */
   model_3d_url: string | null;
   /** Owning supplier's profile id, or null (admin-managed). */

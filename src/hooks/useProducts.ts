@@ -5,7 +5,7 @@ import type { Product, ProductImage } from "../types/catalogue";
 const buildSelect = (withSupplier: boolean, withApproval: boolean) => `
   id, name, slug, sku, kind, short_description,
   price_cents, sale_price_cents, price_max_cents,
-  in_stock, featured, published, ${withApproval ? "approval_status," : ""} created_at,
+  in_stock, featured, published, ${withApproval ? "approval_status," : ""} created_at, updated_at,
   ${withSupplier ? "supplier_id, company_id," : "company_id,"}
   category:categories ( id, name, slug ),
   images:product_images ( id, url, alt, position, variation_id )
