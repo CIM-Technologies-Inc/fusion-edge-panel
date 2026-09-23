@@ -25,11 +25,13 @@ import Attributes from "./pages/Attributes";
 import Categories from "./pages/Categories";
 import Companies from "./pages/Companies";
 import CompanyDetail from "./pages/CompanyDetail";
+import MyCompany from "./pages/MyCompany";
 import BulkPrices from "./pages/BulkPrices";
 import Users from "./pages/Users";
 import Roles from "./pages/Roles";
 import Approvals from "./pages/Approvals";
 import ApprovalReview from "./pages/ApprovalReview";
+import Activity from "./pages/Activity";
 import RequireAdmin from "./components/auth/RequireAdmin";
 import RequireProductManager from "./components/auth/RequireProductManager";
 import RequireCan from "./components/auth/RequireCan";
@@ -81,6 +83,8 @@ export default function App() {
               path="/product/companies/:slug"
               element={<CompanyDetail />}
             />
+            {/* Resolves & redirects to the signed-in user's own company. */}
+            <Route path="/my-company" element={<MyCompany />} />
             <Route element={<RequireCan resource="users" action="view" />}>
               <Route path="/users" element={<Users />} />
             </Route>
@@ -89,6 +93,7 @@ export default function App() {
             <Route element={<RequireAdmin />}>
               <Route path="/product/attributes" element={<Attributes />} />
               <Route path="/roles" element={<Roles />} />
+              <Route path="/activity" element={<Activity />} />
             </Route>
 
             {/* Approvals: admins and staff with the approval permission. */}

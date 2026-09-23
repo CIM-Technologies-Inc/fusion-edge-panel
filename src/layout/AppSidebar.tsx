@@ -12,7 +12,6 @@ import {
 } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
 import { useAuth } from "../context/AuthContext";
-import { useCompaniesFull } from "../hooks/useCompaniesFull";
 
 type NavItem = {
   name: string;
@@ -59,6 +58,13 @@ const approvalsNavItem: NavItem = {
   path: "/approvals",
 };
 
+/** Admin-only: activity log for companies & categories. */
+const activityNavItem: NavItem = {
+  icon: <GridIcon />,
+  name: "Activity",
+  path: "/activity",
+};
+
 /** Admin-only user & role management. */
 const usersNavItem: NavItem = {
   icon: <GroupIcon />,
@@ -74,12 +80,6 @@ const AppSidebar: React.FC = () => {
   const { isAdmin, can, companyId } = useAuth();
   const location = useLocation();
 
-  // A company-user's own company (RLS returns just theirs). Used to deep-link
-  // "My company" straight to its detail page, where brands are managed.
-  const { companies } = useCompaniesFull();
-  const myCompany = companyId
-    ? companies.find((c) => c.id === companyId)
-    : undefined;
 
   // Admins get the full nav. Everyone else gets items for what their
   // permissions allow.
@@ -91,6 +91,7 @@ const AppSidebar: React.FC = () => {
       approvalsNavItem,
       mediaNavItem,
       usersNavItem,
+      activityNavItem,
     ];
   } else {
     // Build the Product group from the sub-links this user can view.
@@ -101,16 +102,13 @@ const AppSidebar: React.FC = () => {
       ...(can("category", "view")
         ? [{ name: "Categories", path: "/product/categories" }]
         : []),
-      // A company-user gets a direct "My company" link (where brands live),
-      // shown to anyone assigned to a company. Users with the company-view
-      // permission but no company of their own get the full Companies list.
-      ...(myCompany
-        ? [
-            {
-              name: "My company",
-              path: `/product/companies/${myCompany.slug}`,
-            },
-          ]
+      // A company-user assigned to a company always gets a "My company" link
+      // (where brands live). It goes through /my-company, which resolves their
+      // company by id and redirects — so it works even before the companies
+      // list has loaded. A user with company-view but no company of their own
+      // gets the full Companies list.
+      ...(companyId
+        ? [{ name: "My company", path: "/my-company" }]
         : can("company", "view")
         ? [{ name: "Companies", path: "/product/companies" }]
         : []),
