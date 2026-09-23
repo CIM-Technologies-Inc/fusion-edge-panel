@@ -14,6 +14,8 @@ type ToolbarProps = {
   onToggleDir: () => void;
   /** Right-hand summary, e.g. "3 of 11". */
   summary: string;
+  /** Extra controls rendered inline with the search bar (e.g. filters). */
+  filters?: React.ReactNode;
 };
 
 export function ListToolbar({
@@ -26,6 +28,7 @@ export function ListToolbar({
   dir,
   onToggleDir,
   summary,
+  filters,
 }: ToolbarProps) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -58,6 +61,7 @@ export function ListToolbar({
         >
           {dir === "asc" ? "↑ Asc" : "↓ Desc"}
         </button>
+        {filters}
       </div>
       <span className="text-sm text-gray-500 dark:text-gray-400">{summary}</span>
     </div>

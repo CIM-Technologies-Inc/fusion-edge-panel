@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import PageBreadcrumb from "../components/common/PageBreadCrumb";
 import PageMeta from "../components/common/PageMeta";
 import Label from "../components/form/Label";
@@ -38,11 +38,24 @@ function fmtDate(iso: string | null) {
   });
 }
 
+/** Relative "ago" when within 24h, otherwise the date. */
+function fmtLastActive(iso: string | null) {
+  if (!iso) return "Never";
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 0) return fmtDate(iso);
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} hr ago`;
+  return fmtDate(iso);
+}
+
 export default function Users() {
   const { users, loading, error, reload } = useUsers();
-  const { roles, roleHasResource } = useRoles();
+  const { roles, rolePerms, roleHasResource } = useRoles();
   const { companies } = useCompanies();
-  const { session, isAdmin } = useAuth();
+  const { session, can, isAdmin, companyId } = useAuth();
   const { notify } = useToast();
   const myId = session?.user?.id;
 
@@ -57,6 +70,8 @@ export default function Users() {
   const [newRoleId, setNewRoleId] = useState("");
   const [newCompanyId, setNewCompanyId] = useState("");
   const [saving, setSaving] = useState(false);
+  // Which user's permission list is expanded in the table.
+  const [permUserId, setPermUserId] = useState<string | null>(null);
 
   // A company can be assigned to a user ONLY when their role is a "company
   // role" (roles.is_company). A role that manages companies (has the company
@@ -83,9 +98,27 @@ export default function Users() {
 
   // Row-level "busy" so buttons disable while their action runs.
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Filter the list by assigned role. "" = all roles.
+  const [roleFilter, setRoleFilter] = useState("");
+
+  const filteredUsers = useMemo(
+    () => (roleFilter ? users.filter((u) => u.role_id === roleFilter) : users),
+    [users, roleFilter]
+  );
+
+  // Roles a company-user may assign: only those already in use in their own
+  // company. Admins/staff can assign any role.
+  const isCompanyManager = !isAdmin && !!companyId;
+  const assignableRoles = useMemo(() => {
+    if (!isCompanyManager) return roles;
+    const inUse = new Set(
+      users.map((u) => u.role_id).filter((id): id is string => !!id)
+    );
+    return roles.filter((r) => inUse.has(r.id));
+  }, [roles, users, isCompanyManager]);
 
   const controls = useTableControls({
-    rows: users,
+    rows: filteredUsers,
     searchFields: (u) => [u.full_name, u.email, u.role],
     sorters: {
       name: (a, b) => (a.full_name ?? "").localeCompare(b.full_name ?? ""),
@@ -228,7 +261,7 @@ export default function Users() {
 
       <div className="space-y-6">
         <div className="flex justify-end">
-          {isAdmin && (
+          {can("users", "add") && (
             <button
               type="button"
               onClick={() => {
@@ -267,6 +300,21 @@ export default function Users() {
               query={controls.query}
               onQuery={controls.setQuery}
               placeholder="Search name, email or role"
+              filters={
+                <select
+                  value={roleFilter}
+                  onChange={(e) => setRoleFilter(e.target.value)}
+                  aria-label="Filter by role"
+                  className="h-11 rounded-lg border border-gray-300 bg-transparent px-4 text-sm text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                >
+                  <option value="">All roles</option>
+                  {assignableRoles.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              }
               sortKey={controls.sortKey}
               onSortKey={controls.setSortKey}
               sortOptions={[
@@ -285,13 +333,16 @@ export default function Users() {
             />
 
             <div className={`${shell} overflow-x-auto p-0`}>
-              <table className="w-full text-sm min-w-[720px]">
+              <table className="w-full text-sm min-w-[1040px]">
                 <thead>
                   <tr className="text-left text-gray-500 border-b border-gray-100 dark:border-gray-800 dark:text-gray-400">
                     <th className="px-5 py-3 font-medium">User</th>
                     <th className="px-5 py-3 font-medium">Role</th>
+                    <th className="px-5 py-3 font-medium">Permissions</th>
                     <th className="px-5 py-3 font-medium">Company</th>
                     <th className="px-5 py-3 font-medium">Status</th>
+                    <th className="px-5 py-3 font-medium">Invited by</th>
+                    <th className="px-5 py-3 font-medium">Last active</th>
                     <th className="px-5 py-3 font-medium">Joined</th>
                     <th className="px-5 py-3 font-medium text-right">Actions</th>
                   </tr>
@@ -338,6 +389,25 @@ export default function Users() {
                         <td className="px-5 py-3 text-gray-700 dark:text-gray-300">
                           {roles.find((r) => r.id === u.role_id)?.name ?? "—"}
                         </td>
+                        <td className="px-5 py-3">
+                          {(() => {
+                            const count = u.is_admin
+                              ? "all"
+                              : (u.role_id
+                                  ? rolePerms.get(u.role_id) ?? []
+                                  : []
+                                ).length;
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => setPermUserId(u.id)}
+                                className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-theme-xs font-medium text-gray-600 hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300"
+                              >
+                                {count} perm{count === 1 ? "" : "s"}
+                              </button>
+                            );
+                          })()}
+                        </td>
                         <td className="px-5 py-3 text-gray-700 dark:text-gray-300">
                           {u.role_id && roleHasResource(u.role_id, "company")
                             ? "n/a"
@@ -356,56 +426,94 @@ export default function Users() {
                           )}
                         </td>
                         <td className="px-5 py-3 text-gray-500 dark:text-gray-400">
+                          {u.invited_by_email ? (
+                            <span className="truncate" title={u.invited_by_email}>
+                              {u.invited_by_email}
+                            </span>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td className="px-5 py-3 text-gray-500 dark:text-gray-400">
+                          {fmtLastActive(u.last_sign_in_at)}
+                        </td>
+                        <td className="px-5 py-3 text-gray-500 dark:text-gray-400">
                           {fmtDate(u.created_at)}
                         </td>
                         <td className="px-5 py-3">
-                          {/* User management is admin-only; staff see the list
-                              read-only. */}
-                          {!isAdmin ? (
+                          {/* Actions follow the users permission. A company user
+                              only ever sees their own company's users here. */}
+                          {!(
+                            can("users", "edit") || can("users", "delete")
+                          ) ? (
                             <span className="block text-right text-theme-xs text-gray-300 dark:text-gray-600">
                               —
                             </span>
                           ) : (
-                          <div className="flex items-center justify-end gap-3">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditUser(u);
-                                setEditName(u.full_name ?? "");
-                                setEditRoleId(u.role_id ?? "");
-                                setEditCompanyId(u.company_id ?? "");
-                              }}
-                              className="text-gray-500 hover:text-brand-500"
-                            >
-                              Edit
-                            </button>
-                            {!isSelf && (
-                              <>
-                                <span className="text-gray-300 dark:text-gray-700">
-                                  |
-                                </span>
+                            <div className="flex items-center justify-end gap-1.5">
+                              {can("users", "edit") && (
+                                <button
+                                  type="button"
+                                  title="Edit"
+                                  aria-label="Edit user"
+                                  onClick={() => {
+                                    setEditUser(u);
+                                    setEditName(u.full_name ?? "");
+                                    setEditRoleId(u.role_id ?? "");
+                                    setEditCompanyId(u.company_id ?? "");
+                                  }}
+                                  className="flex items-center justify-center h-8 w-8 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-brand-500 dark:hover:bg-white/[0.06]"
+                                >
+                                  {/* pencil */}
+                                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M12 20h9" />
+                                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                                  </svg>
+                                </button>
+                              )}
+                              {!isSelf && can("users", "edit") && (
                                 <button
                                   type="button"
                                   disabled={busy}
+                                  title={u.banned_at ? "Reactivate" : "Deactivate"}
+                                  aria-label={u.banned_at ? "Reactivate user" : "Deactivate user"}
                                   onClick={() => handleBan(u)}
-                                  className="text-gray-500 hover:text-warning-500 disabled:opacity-50"
+                                  className="flex items-center justify-center h-8 w-8 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-warning-500 disabled:opacity-50 dark:hover:bg-white/[0.06]"
                                 >
-                                  {u.banned_at ? "Reactivate" : "Deactivate"}
+                                  {u.banned_at ? (
+                                    /* user-check */
+                                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                                      <circle cx="9" cy="7" r="4" />
+                                      <path d="m16 11 2 2 4-4" />
+                                    </svg>
+                                  ) : (
+                                    /* user-x */
+                                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                                      <circle cx="9" cy="7" r="4" />
+                                      <path d="m17 8 5 5M22 8l-5 5" />
+                                    </svg>
+                                  )}
                                 </button>
-                                <span className="text-gray-300 dark:text-gray-700">
-                                  |
-                                </span>
+                              )}
+                              {!isSelf && can("users", "delete") && (
                                 <button
                                   type="button"
                                   disabled={busy}
+                                  title="Delete"
+                                  aria-label="Delete user"
                                   onClick={() => handleDelete(u)}
-                                  className="text-gray-400 hover:text-error-500 disabled:opacity-50"
+                                  className="flex items-center justify-center h-8 w-8 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-error-500 disabled:opacity-50 dark:hover:bg-white/[0.06]"
                                 >
-                                  Delete
+                                  {/* trash */}
+                                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                                    <path d="M10 11v6M14 11v6" />
+                                  </svg>
                                 </button>
-                              </>
-                            )}
-                          </div>
+                              )}
+                            </div>
                           )}
                         </td>
                       </tr>
@@ -505,7 +613,7 @@ export default function Users() {
               className={`${inputClass} w-full`}
             >
               <option value="">No role</option>
-              {roles.map((r) => (
+              {assignableRoles.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.name}
                 </option>
@@ -600,7 +708,7 @@ export default function Users() {
                 }
               >
                 <option value="">No role</option>
-                {roles.map((r) => (
+                {assignableRoles.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.name}
                   </option>
@@ -649,6 +757,73 @@ export default function Users() {
           </button>
         </div>
       </Modal>
+
+      {/* Permissions viewer */}
+      {(() => {
+        const pu = users.find((x) => x.id === permUserId);
+        const perms = pu?.is_admin
+          ? null
+          : pu?.role_id
+          ? rolePerms.get(pu.role_id) ?? []
+          : [];
+        return (
+          <Modal
+            isOpen={permUserId !== null}
+            onClose={() => setPermUserId(null)}
+            className="max-w-md w-full p-6"
+          >
+            <h3 className="mb-1 text-lg font-semibold text-gray-800 dark:text-white/90">
+              Permissions
+            </h3>
+            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+              {pu?.full_name || pu?.email || "User"}
+              {pu &&
+                ` · ${roles.find((r) => r.id === pu.role_id)?.name ?? "No role"}`}
+            </p>
+            {perms === null ? (
+              <p className="text-sm text-gray-600 dark:text-gray-300">
+                This user is a Super Admin — full access to everything.
+              </p>
+            ) : perms.length === 0 ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                This user's role has no permissions.
+              </p>
+            ) : (
+              <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                {(() => {
+                  // Group "resource.action" keys by resource.
+                  const groups = new Map<string, string[]>();
+                  for (const p of perms) {
+                    const [res, act] = p.split(".");
+                    const arr = groups.get(res) ?? [];
+                    arr.push(act);
+                    groups.set(res, arr);
+                  }
+                  const cap = (s: string) =>
+                    s.charAt(0).toUpperCase() + s.slice(1);
+                  return [...groups.entries()].map(([res, actions]) => (
+                    <div key={res}>
+                      <p className="mb-1 text-sm font-medium text-gray-800 dark:text-white/90">
+                        {cap(res)}
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {actions.map((a) => (
+                          <span
+                            key={a}
+                            className="rounded-md bg-brand-50 px-2 py-0.5 text-theme-xs font-medium text-brand-600 dark:bg-brand-500/15 dark:text-brand-300"
+                          >
+                            {cap(a)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+            )}
+          </Modal>
+        );
+      })()}
     </div>
   );
 }

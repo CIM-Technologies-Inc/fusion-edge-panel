@@ -17,6 +17,9 @@ export type AdminUser = {
   banned_at: string | null;
   created_at: string;
   last_sign_in_at: string | null;
+  /** Who invited/created this user, and their email (from the view). */
+  invited_by?: string | null;
+  invited_by_email?: string | null;
 };
 
 export const ROLE_LABEL: Record<UserRole, string> = {
@@ -34,14 +37,21 @@ export async function listUsers(): Promise<{
   users: AdminUser[];
   error: string | null;
 }> {
-  const { data, error } = await supabase
-    .from("admin_users")
-    .select(
-      "id, email, full_name, avatar_url, role, is_admin, role_id, company_id, banned_at, created_at, last_sign_in_at"
-    )
-    .order("created_at", { ascending: false });
+  const base =
+    "id, email, full_name, avatar_url, role, is_admin, role_id, company_id, banned_at, created_at, last_sign_in_at";
+  const run = (cols: string) =>
+    supabase
+      .from("admin_users")
+      .select(cols)
+      .order("created_at", { ascending: false });
+
+  let { data, error } = await run(`${base}, invited_by, invited_by_email`);
+  // Older schema without invited_by columns — retry without them.
+  if (error && /invited_by/i.test(error.message)) {
+    ({ data, error } = await run(base));
+  }
   if (error) return { users: [], error: error.message };
-  return { users: (data as AdminUser[]) ?? [], error: null };
+  return { users: (data as unknown as AdminUser[]) ?? [], error: null };
 }
 
 /**

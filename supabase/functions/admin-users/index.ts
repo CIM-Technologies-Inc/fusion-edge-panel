@@ -80,12 +80,51 @@ Deno.serve(async (req) => {
 
   const { data: profile } = await asCaller
     .from("profiles")
-    .select("role")
+    .select("role, is_admin, company_id, role_id")
     .eq("id", userData.user.id)
     .maybeSingle();
 
-  if (profile?.role !== "admin") {
-    return json({ error: "Admin privileges required" }, 403);
+  const isAdminCaller = profile?.is_admin === true || profile?.role === "admin";
+  const callerCompany = (profile?.company_id as string | null) ?? null;
+
+  // A non-admin may manage users only if their role grants a users permission
+  // AND they belong to a company — and then only within that company.
+  let callerUserPerms: Set<string> = new Set();
+  if (!isAdminCaller && profile?.role_id && callerCompany) {
+    const { data: perms } = await asCaller
+      .from("role_permissions")
+      .select("action")
+      .eq("role_id", profile.role_id)
+      .eq("resource", "users");
+    callerUserPerms = new Set((perms ?? []).map((p) => p.action as string));
+  }
+  const companyScoped = !isAdminCaller;
+
+  if (!isAdminCaller && (callerUserPerms.size === 0 || !callerCompany)) {
+    return json({ error: "Not permitted to manage users" }, 403);
+  }
+
+  // Uses the SERVICE-ROLE client to read a target user's company/admin flag,
+  // so a company caller can be blocked from touching users outside their scope.
+  async function assertTargetInScope(
+    admin: ReturnType<typeof createClient>,
+    targetId: string
+  ): Promise<{ ok: true } | { ok: false; msg: string }> {
+    if (isAdminCaller) return { ok: true };
+    const { data: t } = await admin
+      .from("profiles")
+      .select("company_id, is_admin")
+      .eq("id", targetId)
+      .maybeSingle();
+    if (!t) return { ok: false, msg: "User not found" };
+    if (t.is_admin) return { ok: false, msg: "Can't manage an admin" };
+    if ((t.company_id ?? null) !== callerCompany)
+      return { ok: false, msg: "That user isn't in your company" };
+    return { ok: true };
+  }
+
+  function requirePerm(action: string): boolean {
+    return isAdminCaller || callerUserPerms.has(action);
   }
 
   // --- parse the requested action -------------------------------------------
@@ -105,6 +144,8 @@ Deno.serve(async (req) => {
     switch (action.type) {
       case "create": {
         if (!action.email) return json({ error: "email is required" }, 400);
+        if (!requirePerm("add"))
+          return json({ error: "Not permitted to add users" }, 403);
         const { data, error } = await admin.auth.admin.createUser({
           email: action.email,
           password: action.password || undefined,
@@ -113,17 +154,22 @@ Deno.serve(async (req) => {
         });
         if (error) return json({ error: error.message }, 400);
         // Ensure a profile row and its role (a DB trigger may also create one).
+        // A company caller can only create users in their OWN company, never
+        // as admins.
         await applyProfile(admin, data.user!.id, {
           full_name: action.full_name,
-          role: action.role,
+          role: companyScoped ? undefined : action.role,
           role_id: action.role_id,
-          company_id: action.company_id,
+          company_id: companyScoped ? callerCompany! : action.company_id,
+          invited_by: userData.user.id,
         });
         return json({ ok: true, user_id: data.user!.id });
       }
 
       case "invite": {
         if (!action.email) return json({ error: "email is required" }, 400);
+        if (!requirePerm("add"))
+          return json({ error: "Not permitted to add users" }, 403);
         // redirectTo sends the invite link to the app's set-password page;
         // the full name is stored so their profile is named from the start.
         const { data, error } = await admin.auth.admin.inviteUserByEmail(
@@ -136,9 +182,10 @@ Deno.serve(async (req) => {
         if (error) return json({ error: error.message }, 400);
         await applyProfile(admin, data.user!.id, {
           full_name: action.full_name,
-          role: action.role,
+          role: companyScoped ? undefined : action.role,
           role_id: action.role_id,
-          company_id: action.company_id,
+          company_id: companyScoped ? callerCompany! : action.company_id,
+          invited_by: userData.user.id,
         });
         return json({ ok: true, user_id: data.user!.id });
       }
@@ -147,12 +194,19 @@ Deno.serve(async (req) => {
         if (!action.user_id) return json({ error: "user_id is required" }, 400);
         if (action.user_id === userData.user.id)
           return json({ error: "You can't delete your own account." }, 400);
+        if (!requirePerm("delete"))
+          return json({ error: "Not permitted to delete users" }, 403);
+        const scope = await assertTargetInScope(admin, action.user_id);
+        if (!scope.ok) return json({ error: scope.msg }, 403);
         const { error } = await admin.auth.admin.deleteUser(action.user_id);
         if (error) return json({ error: error.message }, 400);
         return json({ ok: true });
       }
 
       case "setRole": {
+        // Changing the legacy role enum (incl. admin) stays admin-only.
+        if (!isAdminCaller)
+          return json({ error: "Admin privileges required" }, 403);
         if (!ROLES.includes(action.role))
           return json({ error: "Invalid role" }, 400);
         if (action.user_id === userData.user.id && action.role !== "admin")
@@ -168,6 +222,10 @@ Deno.serve(async (req) => {
       case "setBanned": {
         if (action.user_id === userData.user.id)
           return json({ error: "You can't ban your own account." }, 400);
+        if (!requirePerm("edit"))
+          return json({ error: "Not permitted to change users" }, 403);
+        const scope = await assertTargetInScope(admin, action.user_id);
+        if (!scope.ok) return json({ error: scope.msg }, 403);
         // Ban at the auth level (blocks sign-in) and mark the profile.
         const { error: authErr } = await admin.auth.admin.updateUserById(
           action.user_id,
@@ -200,6 +258,7 @@ async function applyProfile(
     role?: string;
     role_id?: string;
     company_id?: string;
+    invited_by?: string;
   }
 ) {
   const patch: Record<string, unknown> = {};
@@ -208,6 +267,7 @@ async function applyProfile(
     patch.role = fields.role;
   if (fields.role_id) patch.role_id = fields.role_id;
   if (fields.company_id) patch.company_id = fields.company_id;
+  if (fields.invited_by) patch.invited_by = fields.invited_by;
   if (Object.keys(patch).length === 0) return;
 
   // Row may not exist yet if no signup trigger — upsert to be safe.
