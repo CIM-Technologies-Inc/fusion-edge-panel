@@ -71,7 +71,12 @@ export default function Users() {
   const [newCompanyId, setNewCompanyId] = useState("");
   const [saving, setSaving] = useState(false);
   // Which user's permission list is expanded in the table.
-  const [permUserId, setPermUserId] = useState<string | null>(null);
+  // Permissions popover: which user, anchored to the clicked chip's position.
+  const [permPopover, setPermPopover] = useState<{
+    userId: string;
+    x: number;
+    y: number;
+  } | null>(null);
 
   // A company can be assigned to a user ONLY when their role is a "company
   // role" (roles.is_company). A role that manages companies (has the company
@@ -400,8 +405,24 @@ export default function Users() {
                             return (
                               <button
                                 type="button"
-                                onClick={() => setPermUserId(u.id)}
-                                className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-theme-xs font-medium text-gray-600 hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300"
+                                onClick={(e) => {
+                                  const r =
+                                    e.currentTarget.getBoundingClientRect();
+                                  setPermPopover(
+                                    permPopover?.userId === u.id
+                                      ? null
+                                      : {
+                                          userId: u.id,
+                                          x: r.left,
+                                          y: r.bottom + 6,
+                                        }
+                                  );
+                                }}
+                                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-theme-xs font-medium ${
+                                  permPopover?.userId === u.id
+                                    ? "bg-brand-500 text-white"
+                                    : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-white/[0.06] dark:text-gray-300"
+                                }`}
                               >
                                 {count} perm{count === 1 ? "" : "s"}
                               </button>
@@ -758,72 +779,79 @@ export default function Users() {
         </div>
       </Modal>
 
-      {/* Permissions viewer */}
-      {(() => {
-        const pu = users.find((x) => x.id === permUserId);
-        const perms = pu?.is_admin
-          ? null
-          : pu?.role_id
-          ? rolePerms.get(pu.role_id) ?? []
-          : [];
-        return (
-          <Modal
-            isOpen={permUserId !== null}
-            onClose={() => setPermUserId(null)}
-            className="max-w-md w-full p-6"
-          >
-            <h3 className="mb-1 text-lg font-semibold text-gray-800 dark:text-white/90">
-              Permissions
-            </h3>
-            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
-              {pu?.full_name || pu?.email || "User"}
-              {pu &&
-                ` · ${roles.find((r) => r.id === pu.role_id)?.name ?? "No role"}`}
-            </p>
-            {perms === null ? (
-              <p className="text-sm text-gray-600 dark:text-gray-300">
-                This user is a Super Admin — full access to everything.
-              </p>
-            ) : perms.length === 0 ? (
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                This user's role has no permissions.
-              </p>
-            ) : (
-              <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-                {(() => {
-                  // Group "resource.action" keys by resource.
-                  const groups = new Map<string, string[]>();
-                  for (const p of perms) {
-                    const [res, act] = p.split(".");
-                    const arr = groups.get(res) ?? [];
-                    arr.push(act);
-                    groups.set(res, arr);
-                  }
-                  const cap = (s: string) =>
-                    s.charAt(0).toUpperCase() + s.slice(1);
-                  return [...groups.entries()].map(([res, actions]) => (
-                    <div key={res}>
-                      <p className="mb-1 text-sm font-medium text-gray-800 dark:text-white/90">
-                        {cap(res)}
-                      </p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {actions.map((a) => (
-                          <span
-                            key={a}
-                            className="rounded-md bg-brand-50 px-2 py-0.5 text-theme-xs font-medium text-brand-600 dark:bg-brand-500/15 dark:text-brand-300"
-                          >
-                            {cap(a)}
-                          </span>
-                        ))}
+      {/* Permissions popover — fixed-position so the table's scroll can't clip it. */}
+      {permPopover &&
+        (() => {
+          const pu = users.find((x) => x.id === permPopover.userId);
+          const perms = pu?.is_admin
+            ? null
+            : pu?.role_id
+            ? rolePerms.get(pu.role_id) ?? []
+            : [];
+          const groups = new Map<string, string[]>();
+          for (const p of perms ?? []) {
+            const [res, act] = p.split(".");
+            const arr = groups.get(res) ?? [];
+            arr.push(act);
+            groups.set(res, arr);
+          }
+          const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+          return (
+            <>
+              {/* click-away backdrop */}
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setPermPopover(null)}
+              />
+              <div
+                className="fixed z-50 w-72 max-h-96 overflow-y-auto rounded-xl border border-gray-200 bg-white p-4 shadow-theme-lg dark:border-gray-800 dark:bg-gray-900"
+                style={{
+                  top: permPopover.y,
+                  left: Math.min(
+                    permPopover.x,
+                    window.innerWidth - 300 // keep it on-screen
+                  ),
+                }}
+              >
+                <p className="mb-1 text-sm font-medium text-gray-800 dark:text-white/90">
+                  {pu?.full_name || pu?.email || "User"}
+                </p>
+                <p className="mb-3 text-theme-xs text-gray-500 dark:text-gray-400">
+                  {roles.find((r) => r.id === pu?.role_id)?.name ?? "No role"}
+                </p>
+                {perms === null ? (
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    Super Admin — full access to everything.
+                  </p>
+                ) : perms.length === 0 ? (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    No permissions.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {[...groups.entries()].map(([res, actions]) => (
+                      <div key={res}>
+                        <p className="mb-1 text-sm font-medium text-gray-800 dark:text-white/90">
+                          {cap(res)}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {actions.map((a) => (
+                            <span
+                              key={a}
+                              className="rounded-md bg-brand-50 px-2 py-0.5 text-theme-xs font-medium text-brand-600 dark:bg-brand-500/15 dark:text-brand-300"
+                            >
+                              {cap(a)}
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ));
-                })()}
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </Modal>
-        );
-      })()}
+            </>
+          );
+        })()}
     </div>
   );
 }
