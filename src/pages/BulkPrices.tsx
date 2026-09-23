@@ -15,14 +15,16 @@ import {
 const shell =
   "rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]";
 const cellInput =
-  "h-9 w-28 rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:text-white/90";
+  "h-9 w-28 rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 disabled:opacity-60 disabled:cursor-not-allowed dark:border-gray-700 dark:text-white/90";
 
 /** Edits are keyed by row id. Product rows and variation rows are separate. */
 type Edits = Record<string, PriceEdit>;
 
 export default function BulkPrices() {
   const { notify } = useToast();
-  const { isSupplier, isAdmin, companyId, session } = useAuth();
+  const { isSupplier, isAdmin, companyId, session, can } = useAuth();
+  // Bulk price editing requires the pricing permission (admins bypass).
+  const canPrice = can("product", "price");
 
   const [products, setProducts] = useState<BulkProduct[]>([]);
   const [loading, setLoading] = useState(true);
@@ -138,6 +140,11 @@ export default function BulkPrices() {
       <PageBreadcrumb pageTitle="Bulk prices" />
 
       <div className="space-y-4">
+        {!canPrice && (
+          <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600 dark:border-gray-800 dark:bg-white/[0.03] dark:text-gray-300">
+            View only — you need the pricing permission to change prices here.
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-3">
           <input
             value={query}
@@ -145,19 +152,25 @@ export default function BulkPrices() {
             placeholder="Search name or SKU"
             className="h-11 w-64 max-w-full rounded-lg border border-gray-300 bg-transparent px-4 text-sm text-gray-800 dark:border-gray-700 dark:text-white/90"
           />
-          <span className="text-sm text-gray-500 dark:text-gray-400">
-            {changedCount > 0
-              ? `${changedCount} unsaved change${changedCount === 1 ? "" : "s"}`
-              : "No changes"}
-          </span>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving || changedCount === 0}
-            className="h-11 ml-auto rounded-lg bg-brand-500 px-4 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Save changes"}
-          </button>
+          {canPrice && (
+            <>
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                {changedCount > 0
+                  ? `${changedCount} unsaved change${
+                      changedCount === 1 ? "" : "s"
+                    }`
+                  : "No changes"}
+              </span>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saving || changedCount === 0}
+                className="h-11 ml-auto rounded-lg bg-brand-500 px-4 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50"
+              >
+                {saving ? "Saving…" : "Save changes"}
+              </button>
+            </>
+          )}
         </div>
 
         {loading ? (
@@ -231,6 +244,7 @@ export default function BulkPrices() {
                                   type="number"
                                   step={0.01}
                                   className={cellInput}
+                                  disabled={!canPrice}
                                   value={varVal(v.id, v.price_cents, "price")}
                                   onChange={(e) =>
                                     setVar(v.id, v.price_cents, "price", e.target.value)
@@ -242,6 +256,7 @@ export default function BulkPrices() {
                                   type="number"
                                   step={0.01}
                                   className={cellInput}
+                                  disabled={!canPrice}
                                   placeholder="—"
                                   value={varVal(v.id, v.sale_price_cents, "sale")}
                                   onChange={(e) =>
@@ -278,6 +293,7 @@ export default function BulkPrices() {
                           type="number"
                           step={0.01}
                           className={cellInput}
+                                  disabled={!canPrice}
                           value={productVal(p, "price")}
                           onChange={(e) => setProduct(p, "price", e.target.value)}
                         />
@@ -287,6 +303,7 @@ export default function BulkPrices() {
                           type="number"
                           step={0.01}
                           className={cellInput}
+                                  disabled={!canPrice}
                           placeholder="—"
                           value={productVal(p, "sale")}
                           onChange={(e) => setProduct(p, "sale", e.target.value)}

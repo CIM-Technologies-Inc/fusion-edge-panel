@@ -53,6 +53,10 @@ export default function ProductNew() {
   // A "company user" (non-admin assigned to a company) goes through approval.
   // Admins and no-company staff publish directly.
   const isCompanyUser = !isAdmin && !!myCompanyId;
+  // Stock and pricing need their own permissions (admins bypass). Without them,
+  // a new product's quantity/price default to 0/blank and the fields are locked.
+  const canEditStock = can("product", "stock");
+  const canEditPrice = can("product", "price");
   const [assignments, setAssignments] = useState<AttributeAssignment[]>([]);
   // Values typed on this page before the product exists. Held locally and
   // written as product-owned (private) values once the product is created —
@@ -136,6 +140,7 @@ export default function ProductNew() {
   const [reqErrors, setReqErrors] = useState<Record<string, string>>({});
   // Which required-image field the media picker is filling, or null.
   const [reqPicker, setReqPicker] = useState<string | null>(null);
+  const [reqPickerOnly, setReqPickerOnly] = useState<"image" | "rfa">("image");
   const [shortDesc, setShortDesc] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
@@ -253,8 +258,10 @@ export default function ProductNew() {
     // an explicit intent; admins use the Published checkbox (state).
     const wantPublished = publishOverride ?? published;
 
-    const priceCents = inputToCents(price);
-    const saleCents = inputToCents(salePrice);
+    // Without the pricing permission a new product starts at ₱0 (no price
+    // input shown), so read 0 instead of the (hidden) fields.
+    const priceCents = canEditPrice ? inputToCents(price) : 0;
+    const saleCents = canEditPrice ? inputToCents(salePrice) : null;
     if (Number.isNaN(priceCents) || Number.isNaN(saleCents)) {
       setFieldErrors({ price: "Prices must be valid numbers." });
       notify("error", "Check the form", "Prices must be valid numbers.");
@@ -748,9 +755,9 @@ export default function ProductNew() {
                 }}
               />
             </div>
-            {/* Inventory sits beside the SKU for simple products; variable
-                products track stock per variation. */}
-            {kind === "simple" && (
+            {/* Inventory sits beside the SKU for simple products (needs the
+                stock permission); variable products track stock per variation. */}
+            {kind === "simple" && canEditStock && (
               <div>
                 <Label>Inventory quantity</Label>
                 <Input
@@ -764,6 +771,12 @@ export default function ProductNew() {
               </div>
             )}
           </div>
+          {kind === "simple" && !canEditStock && (
+            <p className="text-theme-xs text-gray-400">
+              You don't have permission to set inventory — this product will
+              start with 0 stock. An admin or a stock role can set it.
+            </p>
+          )}
           <div>
             <Label>Short description</Label>
             <textarea
@@ -849,11 +862,47 @@ export default function ProductNew() {
                         {!ra.disabled && (
                           <button
                             type="button"
-                            onClick={() => setReqPicker(ra.name)}
+                            onClick={() => {
+                              setReqPickerOnly("image");
+                              setReqPicker(ra.name);
+                            }}
                             className="h-11 shrink-0 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
                           >
                             Choose
                           </button>
+                        )}
+                      </div>
+                    ) : ra.type === "rfa" ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={val ? val.split("/").pop() : ""}
+                          placeholder="No RFA selected"
+                          disabled
+                          error={!!reqErrors[ra.name]}
+                          hint={reqErrors[ra.name]}
+                        />
+                        {!ra.disabled && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReqPickerOnly("rfa");
+                                setReqPicker(ra.name);
+                              }}
+                              className="h-11 shrink-0 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+                            >
+                              {val ? "Change" : "Select RFA"}
+                            </button>
+                            {val && (
+                              <button
+                                type="button"
+                                onClick={() => setVal("")}
+                                className="h-11 shrink-0 rounded-lg px-3 text-sm text-gray-400 hover:text-error-500"
+                              >
+                                ×
+                              </button>
+                            )}
+                          </>
                         )}
                       </div>
                     ) : (
@@ -928,9 +977,10 @@ export default function ProductNew() {
             />
           </div>
 
-          {/* Media picker for required image-type attribute fields. */}
+          {/* Media picker for required image/RFA attribute fields. */}
           <MediaPicker
             isOpen={reqPicker !== null}
+            only={reqPickerOnly}
             onClose={() => setReqPicker(null)}
             onPick={(url) => {
               if (reqPicker === null) return;
@@ -953,6 +1003,11 @@ export default function ProductNew() {
                 A variable product’s price range is calculated from its
                 variations. Create the product, then add variations on the edit
                 page to set their prices.
+              </p>
+            ) : !canEditPrice ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                You don't have permission to set pricing — this product will
+                start at ₱0.00. An admin or a pricing role can set it.
               </p>
             ) : (
               <>

@@ -81,6 +81,14 @@ export default function ProductEditPage() {
   const lockCompany = !isAdmin && !!myCompanyId;
   // Only a company user goes through approval; admins & no-company staff don't.
   const isCompanyUser = !isAdmin && !!myCompanyId;
+  // Stock and pricing are carved OUT of product.edit — each needs its own
+  // permission (admins bypass via can()). So full edit does NOT include stock or
+  // pricing unless the role also has product.stock / product.price.
+  const canEditAll = can("product", "edit");
+  const canEditStock = can("product", "stock");
+  const canEditPrice = can("product", "price");
+  // A role with ONLY stock/price (no full edit) gets the compact limited editor.
+  const limitedOnly = !canEditAll && (canEditStock || canEditPrice);
   const { notify } = useToast();
   const navigate = useNavigate();
 
@@ -91,6 +99,7 @@ export default function ProductEditPage() {
   const [reqErrors, setReqErrors] = useState<Record<string, string>>({});
   // Which required-image field the media picker is filling (its slug), or null.
   const [reqPicker, setReqPicker] = useState<string | null>(null);
+  const [reqPickerOnly, setReqPickerOnly] = useState<"image" | "rfa">("image");
   const [images, setImages] = useState<string[]>([""]);
   const [variations, setVariations] = useState<VariationDraft[]>([]);
   const [dataTab, setDataTab] = useState<"attributes" | "variations">(
@@ -230,6 +239,57 @@ export default function ProductEditPage() {
     if (error) return notify("error", "Couldn't cancel", error);
     notify("info", "Approval cancelled", "The product is a draft again.");
     navigate(0); // reload so the form unlocks with fresh state
+  };
+
+  // Limited save: update only the stock quantity and/or pricing the user is
+  // allowed to change (variations for a variable product). Other fields keep
+  // their stored values.
+  const handleSaveLimited = async () => {
+    if (!form || !product) return;
+    setSaving(true);
+
+    if (product.kind === "variable") {
+      // Variable stock/price live on variations.
+      const { error } = await saveVariations(product.id, variations);
+      setSaving(false);
+      if (error) return notify("error", "Could not save", error);
+    } else {
+      const qty = canEditStock
+        ? Math.max(0, Math.floor(Number(form.quantity) || 0))
+        : product.quantity ?? 0;
+      const priceCents = canEditPrice
+        ? inputToCents(form.price)
+        : product.price_cents;
+      const saleCents = canEditPrice
+        ? inputToCents(form.sale_price)
+        : product.sale_price_cents;
+      if (canEditPrice && (Number.isNaN(priceCents) || Number.isNaN(saleCents))) {
+        setSaving(false);
+        return notify("error", "Check pricing", "Prices must be valid numbers.");
+      }
+      const { error } = await updateProduct(product.id, {
+        name: product.name,
+        slug: product.slug,
+        sku: product.sku,
+        category_id: product.category?.id ?? null,
+        brand_id: product.brand?.id ?? null,
+        company_id: product.company?.id ?? null,
+        supplier_id: product.supplier_id ?? null,
+        model_3d_url: product.model_3d_url ?? null,
+        short_description: product.short_description ?? null,
+        description: product.description ?? null,
+        price_cents: priceCents,
+        sale_price_cents: saleCents,
+        quantity: qty,
+        in_stock: qty > 0,
+        featured: product.featured,
+        published: product.published,
+      });
+      setSaving(false);
+      if (error) return notify("error", "Could not save", error);
+    }
+    notify("success", "Saved", product.name);
+    navigate(`/product/${product.slug}`);
   };
 
   // Category-required attributes for the currently selected category (by slug).
@@ -449,14 +509,28 @@ export default function ProductEditPage() {
       short_description: form.short_description.trim() || null,
       description: descEmpty ? null : descHtml,
       // Never write price columns for a variable product — the trigger owns them.
-      price_cents: isVariable ? null : price,
-      sale_price_cents: isVariable ? null : salePrice,
+      // Without the pricing permission, keep the product's existing prices.
+      price_cents: isVariable
+        ? null
+        : canEditPrice
+        ? price
+        : product.price_cents,
+      sale_price_cents: isVariable
+        ? null
+        : canEditPrice
+        ? salePrice
+        : product.sale_price_cents,
+      // Without the stock permission, keep the product's existing quantity.
       quantity: isVariable
         ? 0
-        : Math.max(0, Math.floor(Number(form.quantity) || 0)),
+        : canEditStock
+        ? Math.max(0, Math.floor(Number(form.quantity) || 0))
+        : product.quantity ?? 0,
       in_stock: isVariable
         ? form.in_stock
-        : Math.max(0, Math.floor(Number(form.quantity) || 0)) > 0,
+        : (canEditStock
+            ? Math.max(0, Math.floor(Number(form.quantity) || 0))
+            : product.quantity ?? 0) > 0,
       featured: form.featured,
       published: wantPublished,
     };
@@ -604,6 +678,170 @@ export default function ProductEditPage() {
               className="h-11 rounded-lg bg-brand-500 px-5 text-sm font-medium text-white hover:bg-brand-600"
             >
               Cancel approval request
+            </button>
+          </div>
+        </div>
+      ) : limitedOnly ? (
+        /* Limited editor: read-only except the stock/price the role may change. */
+        <div className="mx-auto max-w-xl space-y-6">
+          <div className={`${shell} flex items-center gap-4`}>
+            {product.images.find((i) => i.variation_id === null)?.url ? (
+              <img
+                src={
+                  product.images.find((i) => i.variation_id === null)?.url
+                }
+                alt={product.name}
+                className="object-cover w-16 h-16 rounded-lg shrink-0 bg-gray-50 dark:bg-white/[0.06]"
+              />
+            ) : (
+              <div className="w-16 h-16 rounded-lg bg-gray-100 shrink-0 dark:bg-gray-800" />
+            )}
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold text-gray-800 truncate dark:text-white/90">
+                {product.name}
+              </h2>
+              <p className="text-theme-xs text-gray-400">
+                {product.sku ?? "—"} · you can edit{" "}
+                {[canEditStock && "stock", canEditPrice && "pricing"]
+                  .filter(Boolean)
+                  .join(" & ")}{" "}
+                only
+              </p>
+            </div>
+          </div>
+
+          {isVariable ? (
+            <div className={`${shell} space-y-4`}>
+              <h3 className="font-medium text-gray-800 dark:text-white/90">
+                Variations
+              </h3>
+              <div className="space-y-4">
+                {variations.map((v, i) => (
+                  <div
+                    key={v.id ?? i}
+                    className="pb-4 border-b border-gray-100 last:border-0 last:pb-0 dark:border-gray-800"
+                  >
+                    <p className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Variation {i + 1}
+                      {v.sku ? ` · ${v.sku}` : ""}
+                    </p>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      {canEditStock && (
+                        <div>
+                          <Label>Qty</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            step={1}
+                            value={v.quantity}
+                            onChange={(e) =>
+                              setVariations((list) =>
+                                list.map((x, idx) =>
+                                  idx === i
+                                    ? { ...x, quantity: e.target.value }
+                                    : x
+                                )
+                              )
+                            }
+                          />
+                        </div>
+                      )}
+                      {canEditPrice && (
+                        <>
+                          <div>
+                            <Label>Price</Label>
+                            <Input
+                              type="number"
+                              step={0.01}
+                              value={v.price}
+                              onChange={(e) =>
+                                setVariations((list) =>
+                                  list.map((x, idx) =>
+                                    idx === i
+                                      ? { ...x, price: e.target.value }
+                                      : x
+                                  )
+                                )
+                              }
+                            />
+                          </div>
+                          <div>
+                            <Label>Sale price</Label>
+                            <Input
+                              type="number"
+                              step={0.01}
+                              value={v.sale_price}
+                              onChange={(e) =>
+                                setVariations((list) =>
+                                  list.map((x, idx) =>
+                                    idx === i
+                                      ? { ...x, sale_price: e.target.value }
+                                      : x
+                                  )
+                                )
+                              }
+                            />
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className={`${shell} space-y-5`}>
+              {canEditStock && (
+                <div>
+                  <Label>Inventory quantity</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step={1}
+                    value={form.quantity}
+                    onChange={(e) => set("quantity", e.target.value)}
+                  />
+                </div>
+              )}
+              {canEditPrice && (
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <div>
+                    <Label>Price (PHP)</Label>
+                    <Input
+                      type="number"
+                      step={0.01}
+                      value={form.price}
+                      onChange={(e) => set("price", e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label>Sale price (PHP)</Label>
+                    <Input
+                      type="number"
+                      step={0.01}
+                      value={form.sale_price}
+                      onChange={(e) => set("sale_price", e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3">
+            <Link
+              to={`/product/${product.slug}`}
+              className="h-11 leading-[44px] rounded-lg border border-gray-300 px-5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+            >
+              Cancel
+            </Link>
+            <button
+              type="button"
+              onClick={handleSaveLimited}
+              disabled={saving}
+              className="h-11 rounded-lg bg-brand-500 px-5 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Save"}
             </button>
           </div>
         </div>
@@ -858,9 +1096,14 @@ export default function ProductEditPage() {
                   min="0"
                   step={1}
                   value={form.quantity}
+                  disabled={!canEditStock}
                   onChange={(e) => set("quantity", e.target.value)}
                   hint={
-                    Number(form.quantity) > 0 ? "In stock" : "0 = out of stock"
+                    !canEditStock
+                      ? "You don't have permission to edit stock."
+                      : Number(form.quantity) > 0
+                      ? "In stock"
+                      : "0 = out of stock"
                   }
                 />
               </div>
@@ -976,11 +1219,47 @@ export default function ProductEditPage() {
                         {!ra.disabled && (
                           <button
                             type="button"
-                            onClick={() => setReqPicker(key)}
+                            onClick={() => {
+                              setReqPickerOnly("image");
+                              setReqPicker(key);
+                            }}
                             className="h-11 shrink-0 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
                           >
                             Choose
                           </button>
+                        )}
+                      </div>
+                    ) : ra.type === "rfa" ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={val ? val.split("/").pop() : ""}
+                          placeholder="No RFA selected"
+                          disabled
+                          error={!!reqErrors[key]}
+                          hint={reqErrors[key]}
+                        />
+                        {!ra.disabled && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReqPickerOnly("rfa");
+                                setReqPicker(key);
+                              }}
+                              className="h-11 shrink-0 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+                            >
+                              {val ? "Change" : "Select RFA"}
+                            </button>
+                            {val && (
+                              <button
+                                type="button"
+                                onClick={() => setVal("")}
+                                className="h-11 shrink-0 rounded-lg px-3 text-sm text-gray-400 hover:text-error-500"
+                              >
+                                ×
+                              </button>
+                            )}
+                          </>
                         )}
                       </div>
                     ) : (
@@ -1076,9 +1355,10 @@ export default function ProductEditPage() {
             </p>
           </div>
 
-          {/* Media picker for required image-type attribute fields. */}
+          {/* Media picker for required image/RFA attribute fields. */}
           <MediaPicker
             isOpen={reqPicker !== null}
+            only={reqPickerOnly}
             onClose={() => setReqPicker(null)}
             onPick={(url) => {
               if (reqPicker === null) return;
@@ -1107,6 +1387,11 @@ export default function ProductEditPage() {
               </p>
             ) : (
               <>
+                {!canEditPrice && (
+                  <p className="text-theme-xs text-gray-400">
+                    You don't have permission to edit pricing.
+                  </p>
+                )}
                 <div>
                   <Label>
                     Price (PHP) <span className="text-error-500">*</span>
@@ -1115,6 +1400,7 @@ export default function ProductEditPage() {
                     type="number"
                     step={0.01}
                     value={form.price}
+                    disabled={!canEditPrice}
                     onChange={(e) => set("price", e.target.value)}
                     error={!!fieldErrors.price}
                     hint={fieldErrors.price}
@@ -1126,6 +1412,7 @@ export default function ProductEditPage() {
                     type="number"
                     step={0.01}
                     value={form.sale_price}
+                    disabled={!canEditPrice}
                     onChange={(e) => set("sale_price", e.target.value)}
                     error={!!fieldErrors.sale_price}
                     hint={fieldErrors.sale_price}
