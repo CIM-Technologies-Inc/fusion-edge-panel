@@ -36,6 +36,14 @@ export default function UserProfiles() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Change-password modal state.
+  const [pwOpen, setPwOpen] = useState(false);
+  const [currentPw, setCurrentPw] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [confirmPw, setConfirmPw] = useState("");
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwSaving, setPwSaving] = useState(false);
+
   const load = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
@@ -101,6 +109,57 @@ export default function UserProfiles() {
     notify("success", "Profile updated", "Your changes were saved.");
     setEditOpen(false);
     load();
+  };
+
+  const openChangePassword = () => {
+    setCurrentPw("");
+    setNewPw("");
+    setConfirmPw("");
+    setPwError(null);
+    setPwOpen(true);
+  };
+
+  const handleChangePassword = async () => {
+    setPwError(null);
+
+    if (newPw.length < 8) {
+      setPwError("New password must be at least 8 characters.");
+      return;
+    }
+    if (newPw !== confirmPw) {
+      setPwError("The new passwords don't match.");
+      return;
+    }
+    if (currentPw && currentPw === newPw) {
+      setPwError("The new password must be different from the current one.");
+      return;
+    }
+
+    setPwSaving(true);
+
+    // Re-verify the current password first (Supabase doesn't require it, but
+    // it's safer to confirm the person at the keyboard is the account owner).
+    if (email) {
+      const { error: verifyError } = await supabase.auth.signInWithPassword({
+        email,
+        password: currentPw,
+      });
+      if (verifyError) {
+        setPwSaving(false);
+        setPwError("Your current password is incorrect.");
+        return;
+      }
+    }
+
+    const { error } = await supabase.auth.updateUser({ password: newPw });
+    setPwSaving(false);
+
+    if (error) {
+      setPwError(error.message);
+      return;
+    }
+    notify("success", "Password changed", "Use your new password next time.");
+    setPwOpen(false);
   };
 
   const displayName = profile?.full_name?.trim() || email || "Your profile";
@@ -196,6 +255,25 @@ export default function UserProfiles() {
               </div>
             </dl>
           </div>
+
+          {/* Security */}
+          <div className={`${shell} flex flex-wrap items-center justify-between gap-4`}>
+            <div>
+              <h4 className="text-base font-semibold text-gray-800 dark:text-white/90">
+                Password
+              </h4>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Change the password you use to sign in.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={openChangePassword}
+              className="h-11 shrink-0 rounded-lg border border-gray-300 px-5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+            >
+              Change password
+            </button>
+          </div>
         </div>
       )}
 
@@ -277,6 +355,70 @@ export default function UserProfiles() {
             className="h-11 rounded-lg bg-brand-500 px-5 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save changes"}
+          </button>
+        </div>
+      </Modal>
+
+      {/* Change password modal */}
+      <Modal
+        isOpen={pwOpen}
+        onClose={() => setPwOpen(false)}
+        className="max-w-lg w-full p-6"
+      >
+        <h4 className="mb-1 text-lg font-semibold text-gray-800 dark:text-white/90">
+          Change password
+        </h4>
+        <p className="mb-6 text-sm text-gray-500 dark:text-gray-400">
+          Enter your current password, then choose a new one.
+        </p>
+
+        <div className="space-y-5">
+          <div>
+            <Label>Current password</Label>
+            <Input
+              type="password"
+              value={currentPw}
+              onChange={(e) => setCurrentPw(e.target.value)}
+            />
+          </div>
+          <div>
+            <Label>New password</Label>
+            <Input
+              type="password"
+              value={newPw}
+              onChange={(e) => setNewPw(e.target.value)}
+            />
+            <p className="mt-1 text-theme-xs text-gray-400">
+              At least 8 characters.
+            </p>
+          </div>
+          <div>
+            <Label>Confirm new password</Label>
+            <Input
+              type="password"
+              value={confirmPw}
+              onChange={(e) => setConfirmPw(e.target.value)}
+            />
+          </div>
+
+          {pwError && <p className="text-sm text-error-500">{pwError}</p>}
+        </div>
+
+        <div className="flex justify-end gap-3 mt-6">
+          <button
+            type="button"
+            onClick={() => setPwOpen(false)}
+            className="h-11 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleChangePassword}
+            disabled={pwSaving}
+            className="h-11 rounded-lg bg-brand-500 px-5 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50"
+          >
+            {pwSaving ? "Saving…" : "Update password"}
           </button>
         </div>
       </Modal>
