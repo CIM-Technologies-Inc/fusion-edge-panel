@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router";
 import PageBreadcrumb from "../components/common/PageBreadCrumb";
 import PageMeta from "../components/common/PageMeta";
 import ProductTable from "../components/product/ProductTable";
+import ActivityDrawer from "../components/common/ActivityDrawer";
 import { useProducts } from "../hooks/useProducts";
 import { useCategories } from "../hooks/useCategories";
 import { useCompaniesFull } from "../hooks/useCompaniesFull";
@@ -45,6 +46,10 @@ export default function Product() {
   const [filterCompanyId, setFilterCompanyId] = useState("");
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Product whose change history is open in the activity modal, or null.
+  const [activityProduct, setActivityProduct] = useState<ProductType | null>(
+    null
+  );
 
   const handleDelete = async (product: ProductType) => {
     if (
@@ -273,11 +278,22 @@ export default function Product() {
             }
             onDuplicate={can("product", "add") ? handleDuplicate : undefined}
             onDelete={can("product", "delete") ? handleDelete : undefined}
+            onActivity={
+              can("product", "view") ? setActivityProduct : undefined
+            }
             duplicatingId={duplicatingId}
             deletingId={deletingId}
           />
         )}
       </div>
+
+      {/* Per-product change history, in a right-side drawer. */}
+      <ActivityDrawer
+        table="products"
+        recordId={activityProduct?.id ?? null}
+        title={activityProduct?.name}
+        onClose={() => setActivityProduct(null)}
+      />
     </div>
   );
 }

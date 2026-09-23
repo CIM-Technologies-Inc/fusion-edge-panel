@@ -10,6 +10,7 @@ import ImagePreview from "../components/product/ImagePreview";
 import Model3DField from "../components/product/Model3DField";
 import VariationBuilder from "../components/product/VariationBuilder";
 import Tabs from "../components/common/Tabs";
+import ActivityLog from "../components/common/ActivityLog";
 import {
   saveVariations,
   validateVariations,
@@ -116,6 +117,8 @@ export default function ProductEditPage() {
   // straight on the full form (step 3); go back to step 2 to change the
   // company/brand/category. (Step 1, type, is fixed and always done.)
   const [step, setStep] = useState<2 | 3>(3);
+  // Per-product change history, shown on demand.
+  const [showActivity, setShowActivity] = useState(false);
 
   // Seed the form once the product loads.
   useEffect(() => {
@@ -1049,14 +1052,33 @@ export default function ProductEditPage() {
             {categories.find((c) => c.id === form.category_id)?.name ?? "—"}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setStep(2)}
-          className="h-9 ml-auto rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
-        >
-          Change
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowActivity((v) => !v)}
+            className="h-9 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+          >
+            {showActivity ? "Hide activity" : "View activity"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setStep(2)}
+            className="h-9 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+          >
+            Change
+          </button>
+        </div>
       </div>
+
+      {/* Change history for this product, on demand. */}
+      {showActivity && (
+        <div className={`${shell} mb-6`}>
+          <h3 className="mb-4 text-sm font-medium text-gray-800 dark:text-white/90">
+            Activity
+          </h3>
+          <ActivityLog table="products" recordId={product.id} limit={30} />
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="grid gap-6 lg:grid-cols-3">
         {/* Left column: details card, then the attributes card. */}

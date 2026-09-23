@@ -5,6 +5,8 @@ import PageMeta from "../components/common/PageMeta";
 import Label from "../components/form/Label";
 import Input from "../components/form/input/InputField";
 import MediaPicker from "../components/media/MediaPicker";
+import ActivityDrawer from "../components/common/ActivityDrawer";
+import RowMenu, { MenuItem, EditIconButton } from "../components/common/RowMenu";
 import { Modal } from "../components/ui/modal";
 import { ListToolbar, Pager } from "../components/common/ListControls";
 import { useCompaniesFull } from "../hooks/useCompaniesFull";
@@ -38,7 +40,7 @@ const EMPTY: CompanyInput = {
 export default function Companies() {
   const { companies, loading, error, reload } = useCompaniesFull();
   const { notify } = useToast();
-  const { can } = useAuth();
+  const { can, isAdmin } = useAuth();
 
   const [form, setForm] = useState<CompanyInput>(EMPTY);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -47,6 +49,10 @@ export default function Companies() {
   const [saving, setSaving] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  // Company whose change history is open in the drawer, or null.
+  const [activityCompany, setActivityCompany] = useState<CompanyFull | null>(
+    null
+  );
 
   const controls = useTableControls({
     rows: companies,
@@ -364,7 +370,7 @@ export default function Companies() {
                       </span>
                     </div>
 
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-1.5">
                       <Link
                         to={`/product/companies/${c.slug}`}
                         className="h-9 inline-flex items-center rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
@@ -372,22 +378,32 @@ export default function Companies() {
                         Open
                       </Link>
                       {can("company", "edit") && (
-                      <button
-                        type="button"
-                        onClick={() => startEdit(c)}
-                        className="h-9 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
-                      >
-                        Edit
-                      </button>
+                        <EditIconButton onClick={() => startEdit(c)} />
                       )}
-                      {can("company", "delete") && (
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(c)}
-                        className="h-9 px-3 text-sm text-gray-400 rounded-lg hover:text-error-500"
-                      >
-                        Delete
-                      </button>
+                      {(isAdmin || can("company", "delete")) && (
+                        <RowMenu>
+                          {isAdmin && (
+                            <MenuItem onClick={() => setActivityCompany(c)}>
+                              {/* history */}
+                              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M3 3v5h5" />
+                                <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
+                                <path d="M12 7v5l3 3" />
+                              </svg>
+                              View activity
+                            </MenuItem>
+                          )}
+                          {can("company", "delete") && (
+                            <MenuItem danger onClick={() => handleDelete(c)}>
+                              {/* trash */}
+                              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                                <path d="M10 11v6M14 11v6" />
+                              </svg>
+                              Delete
+                            </MenuItem>
+                          )}
+                        </RowMenu>
                       )}
                     </div>
                   </div>
@@ -408,6 +424,14 @@ export default function Companies() {
         isOpen={pickerOpen}
         onClose={() => setPickerOpen(false)}
         onPick={(url) => set("logo_url", url)}
+      />
+
+      {/* Per-company change history, in a right-side drawer. */}
+      <ActivityDrawer
+        table="companies"
+        recordId={activityCompany?.id ?? null}
+        title={activityCompany?.name}
+        onClose={() => setActivityCompany(null)}
       />
     </div>
   );

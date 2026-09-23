@@ -6,7 +6,7 @@ import ActivityLog from "../components/common/ActivityLog";
 const shell =
   "rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/[0.03]";
 
-type Filter = "all" | "companies" | "categories";
+type Filter = "all" | "companies" | "categories" | "products";
 
 export default function Activity() {
   const [filter, setFilter] = useState<Filter>("all");
@@ -24,6 +24,7 @@ export default function Activity() {
           {(
             [
               { key: "all", label: "All" },
+              { key: "products", label: "Products" },
               { key: "companies", label: "Companies" },
               { key: "categories", label: "Categories" },
             ] as const

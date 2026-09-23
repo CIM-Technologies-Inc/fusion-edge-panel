@@ -49,6 +49,10 @@ const HIDDEN_FIELDS = new Set([
   "updated_at",
   "position",
   "slug",
+  // Product bookkeeping that only adds noise to a human-readable diff.
+  "approved_snapshot",
+  "search_vector",
+  "supplier_id",
 ]);
 
 /** A readable list of "field: old → new" (or "field: value") for an entry. */

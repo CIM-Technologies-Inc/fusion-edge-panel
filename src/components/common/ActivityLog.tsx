@@ -8,6 +8,7 @@ import {
 const RESOURCE_LABEL: Record<string, string> = {
   companies: "Company",
   categories: "Category",
+  products: "Product",
 };
 
 const actionWord: Record<string, string> = {
