@@ -1,112 +1,99 @@
-# TailAdmin React - Free React Tailwind Admin Dashboard Template
+# FusionEdge — Product Catalogue Admin
 
-TailAdmin is a free and open-source admin dashboard template built on **React and Tailwind CSS**, providing developers
-with everything they need to create a comprehensive, data-driven back-end,
-dashboard, or admin panel solution for upcoming web projects.
+A WooCommerce-style product catalogue admin panel for managing companies, brands,
+categories, and products. Built on the TailAdmin React template and backed by
+Supabase (Postgres, Row-Level Security, Storage, Auth, and Edge Functions).
 
-With TailAdmin, you get access to all the necessary dashboard UI components, elements, and pages required to build a
-feature-rich and complete dashboard or admin panel. Whether you're building dashboard or admin panel for a complex web
-application or a simple website, TailAdmin is the perfect solution to help you get up and running quickly.
+**Stack:** React 19 · TypeScript · Vite 6 · Tailwind CSS v4 · React Router 7 · Supabase
 
-![TailAdmin React.js Dashboard Preview](./banner.png)
+## Features
 
-## Overview
+### Catalogue
 
-TailAdmin provides essential UI components and layouts for building feature-rich, data-driven admin dashboards and
-control panels. It's built on:
+- **Products** — simple and variable products, per-variation attributes, real
+  inventory quantity, featured flag (featured items sort first), auto-generated
+  slugs, and a 3-step create/edit wizard (type → company/brand/category → details).
+- **Companies & brands** — companies own brands (many-to-many); a company's slug is
+  derived from its unique name; brands are created from the company detail page.
+- **Categories** — nested categories with per-category **required attributes**
+  driven by [`src/config/requiredAttributes.json`](src/config/requiredAttributes.json)
+  (text / number / url / color / image / RFA field types).
+- **Media library** — image and `.rfa` uploads with a filterable picker; all
+  image fields across the app pick from the library (no raw URL inputs).
+- **Bulk price editing** across products and variations. Prices are in
+  Philippine Peso (₱).
 
-- React 19
-- TypeScript
-- Tailwind CSS v4
+### Roles, permissions & scoping
 
-### Quick Links
+- Role-based permissions per resource (view / add / edit / delete) plus carved-out
+  actions: **approval.approve/reject**, **product.feature**, **product.stock**,
+  **product.price**.
+- **Company scoping** — company users only see and manage their own company's data;
+  no-company staff see everything, gated by permission. Enforced in the UI and in
+  Postgres RLS.
+- User management (invite, deactivate, delete) via a service-role Edge Function,
+  with invited-by / last-active tracking and a per-user permission viewer.
 
-- [✨ Visit Website](https://tailadmin.com)
-- [📄 Documentation](https://tailadmin.com/docs)
-- [⬇️ Download](https://tailadmin.com/download)
-- [🖌️ Figma Design File (Community Edition)](https://www.figma.com/community/file/1214477970819985778)
-- [⚡ Get PRO Version](https://tailadmin.com/pricing)
+### Workflow & auditing
 
-### Demos
+- **Product approval** — company-user publishes go to *pending*; admins approve or
+  reject (with a reason) on a dedicated Approvals page with a before/after diff.
+  Bell notifications flow both ways.
+- **Activity log** — who changed what, with before → after values, for products,
+  companies, and categories. Viewable per-record (pencil + ⋯ menu → right-side
+  drawer) and on a global Activity page with type tabs and a date-range filter.
 
-- [Free Version](https://free-react-demo.tailadmin.com/)
-- [Pro Version](https://react-demo.tailadmin.com)
+### Account
 
-### Other Versions
-
-- [HTML Version](https://github.com/TailAdmin/tailadmin-free-tailwind-dashboard-template)
-- [Next.js Version](https://github.com/TailAdmin/free-nextjs-admin-dashboard)
-- [Vue.js Version](https://github.com/TailAdmin/vue-tailwind-admin-dashboard)
-- [Angular Version](https://github.com/TailAdmin/free-angular-tailwind-dashboard)
-- [Laravel Version](https://github.com/TailAdmin/tailadmin-laravel)
+- Profile page with avatar/name editing and **change password**.
+- Optional guided product tour, replayable from the dashboard Help button
+  (it does not auto-start).
 
 ## Installation
 
 ### Prerequisites
 
-To get started with TailAdmin, ensure you have the following prerequisites installed and set up:
+- Node.js 18.x or later (20.x+ recommended)
+- A Supabase project (Postgres, Auth, Storage) with the SQL migrations in
+  `supabase/migrations/` applied in order, and the `admin-users` Edge Function
+  deployed.
 
-- Node.js 18.x or later (recommended to use Node.js 20.x or later)
-
-### Cloning the Repository
-
-Clone the repository using the following command:
-
-```bash
-git clone https://github.com/TailAdmin/free-react-tailwind-admin-dashboard.git
-```
-
-> Windows Users: place the repository near the root of your drive if you face issues while cloning.
+### Setup
 
 1. Install dependencies:
 
    ```bash
    npm install
-   # or
-   yarn install
    ```
 
-2. Start the development server:
+2. Create a `.env` with your Supabase project credentials:
+
+   ```bash
+   VITE_SUPABASE_URL=your-project-url
+   VITE_SUPABASE_ANON_KEY=your-anon-key
+   ```
+
+3. Start the development server:
+
    ```bash
    npm run dev
-   # or
-   yarn dev
    ```
 
-## Components
+4. Type-check / build:
 
-TailAdmin is a pre-designed starting point for building a web-based dashboard using React.js and Tailwind CSS. The
-template includes:
+   ```bash
+   npx tsc -b   # type-check
+   npm run build
+   ```
 
-- Sophisticated and accessible sidebar
-- Data visualization components
-- Prebuilt profile management and 404 page
-- Tables and Charts(Line and Bar)
-- Authentication forms and input elements
-- Alerts, Dropdowns, Modals, Buttons and more
-- FAQ & Accordion, Testimonials, and Carousels
-- Can't forget Dark Mode 🕶️
+> Migrations under `supabase/migrations/` are run manually in the Supabase SQL
+> editor (they are gitignored). Apply any new migration before using the feature
+> that depends on it.
 
-All components are built with React and styled using Tailwind CSS for easy customization.
+---
 
-## Feature Comparison
-
-### Free Version
-
-- 1 Unique Dashboard
-- 35+ dashboard components
-- 50+ UI elements
-- Basic Figma design files
-- Community support
-
-### Pro Version
-
-- 7 Unique Dashboards: Analytics, Ecommerce, Marketing, CRM, SaaS, Stocks, Logistics (more coming soon)
-- 500+ dashboard components and UI elements
-- Complete Figma design file
-- Email support
-
-To learn more about pro version features and pricing, visit our [pricing page](https://tailadmin.com/pricing).
+Built on the free [TailAdmin React](https://tailadmin.com) template (MIT). The
+template's original changelog and credits are preserved below.
 
 ## Changelog
 
