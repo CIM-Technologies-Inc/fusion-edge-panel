@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { Link } from "react-router";
 import Chart from "react-apexcharts";
 import type { ApexOptions } from "apexcharts";
@@ -7,7 +7,7 @@ import Badge from "../ui/badge/Badge";
 import { useProducts } from "../../hooks/useProducts";
 import { useDashboardStats } from "../../hooks/useDashboardStats";
 import { useAuth } from "../../context/AuthContext";
-import { useTour, tourUnseen } from "../tour/TourContext";
+import { useTour } from "../tour/TourContext";
 import { formatPrice } from "../../lib/price";
 import type { Product } from "../../types/catalogue";
 
@@ -123,22 +123,9 @@ export default function CatalogueDashboard() {
   const { products: allProducts, loading: productsLoading } = useProducts();
   const { stats } = useDashboardStats();
   const { isAdmin, isSupplier, companyId } = useAuth();
+  // The walkthrough can be replayed on demand from the Help button; it no
+  // longer auto-starts.
   const { start: startTour } = useTour();
-
-  // Auto-start the walkthrough once, ever, for a new supplier (per-user flag).
-  useEffect(() => {
-    if (!isSupplier) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
-    tourUnseen().then((unseen) => {
-      if (cancelled || !unseen) return;
-      timer = setTimeout(() => startTour(), 600);
-    });
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [isSupplier, startTour]);
 
   // Non-admins see only their own company's products in every dashboard
   // number. A non-admin with no company sees none. Admins see everything.

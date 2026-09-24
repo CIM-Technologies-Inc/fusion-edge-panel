@@ -7,7 +7,7 @@ import Badge from "../ui/badge/Badge";
 import { useProducts } from "../../hooks/useProducts";
 import { useCompanies } from "../../hooks/useCompanies";
 import { useAuth } from "../../context/AuthContext";
-import { useTour, tourUnseen } from "../tour/TourContext";
+import { useTour } from "../tour/TourContext";
 import { listFiles } from "../../lib/media";
 import { formatPrice } from "../../lib/price";
 import type { Product } from "../../types/catalogue";
@@ -49,25 +49,13 @@ export default function CompanyDashboard() {
   const { products: allProducts, loading } = useProducts();
   const { companies } = useCompanies();
   const { companyId } = useAuth();
+  // The walkthrough can be replayed on demand from the Help button; it no
+  // longer auto-starts.
   const { start: startTour } = useTour();
   const [mediaCount, setMediaCount] = useState<number | null>(null);
 
   const companyName =
     companies.find((c) => c.id === companyId)?.name ?? "Your company";
-
-  // Auto-start the walkthrough once, ever, for a company user.
-  useEffect(() => {
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
-    tourUnseen().then((unseen) => {
-      if (cancelled || !unseen) return;
-      timer = setTimeout(() => startTour(), 600);
-    });
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [startTour]);
 
   // Media is company-scoped, so listFiles already returns only their files.
   useEffect(() => {

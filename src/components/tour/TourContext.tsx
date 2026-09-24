@@ -45,25 +45,6 @@ async function markTourComplete() {
     .eq("id", user.id);
 }
 
-/**
- * Whether the signed-in user has NOT yet seen the tour (so it should auto-run
- * once). Reads the per-user flag from their profile. Any error → treat as seen
- * (don't nag).
- */
-export async function tourUnseen(): Promise<boolean> {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return false;
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("tour_completed_at")
-    .eq("id", user.id)
-    .maybeSingle();
-  if (error) return false;
-  return !data?.tour_completed_at;
-}
-
 /** The supplier-focused product walkthrough. */
 const STEPS: TourStep[] = [
   {
