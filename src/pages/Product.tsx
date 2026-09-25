@@ -148,19 +148,19 @@ export default function Product() {
 
       <div className="space-y-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-center">
             <input
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search name, slug or SKU"
-              className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:text-white/90 dark:placeholder:text-white/30 sm:w-72"
+              className="col-span-2 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:text-white/90 dark:placeholder:text-white/30 sm:w-72"
             />
             {showCompanyFilter && (
               <select
                 value={filterCompanyId}
                 onChange={(e) => setFilterCompanyId(e.target.value)}
-                className="h-11 rounded-lg border border-gray-300 bg-transparent px-4 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 sm:w-auto"
               >
                 <option value="">All companies</option>
                 {companies.map((c) => (
@@ -173,7 +173,7 @@ export default function Product() {
             <select
               value={categoryId}
               onChange={(e) => setCategoryId(e.target.value)}
-              className="h-11 rounded-lg border border-gray-300 bg-transparent px-4 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+              className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 sm:w-auto"
             >
               <option value="">All categories</option>
               {categories.map((c) => (
@@ -185,7 +185,7 @@ export default function Product() {
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value as StatusFilter)}
-              className="h-11 rounded-lg border border-gray-300 bg-transparent px-4 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+              className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 sm:w-auto"
             >
               <option value="all">All status</option>
               <option value="published">Published</option>
@@ -193,12 +193,12 @@ export default function Product() {
               <option value="pending">Pending approval</option>
               <option value="rejected">Rejected</option>
             </select>
-            <div className="inline-flex">
+            <div className="flex w-full sm:w-auto">
               <select
                 value={sortKey}
                 onChange={(e) => setSortKey(e.target.value as SortKey)}
                 aria-label="Sort by"
-                className="h-11 rounded-l-lg border border-gray-300 bg-transparent px-4 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                className="h-11 w-full rounded-l-lg border border-gray-300 bg-transparent px-4 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 sm:w-auto"
               >
                 <option value="created">Date created</option>
                 <option value="updated">Date updated</option>
@@ -213,7 +213,7 @@ export default function Product() {
                 aria-label={
                   sortDir === "asc" ? "Sort ascending" : "Sort descending"
                 }
-                className="flex h-11 w-11 items-center justify-center rounded-r-lg border border-l-0 border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-r-lg border border-l-0 border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
               >
                 <svg
                   className={`h-4 w-4 transition-transform ${
@@ -239,7 +239,7 @@ export default function Product() {
                   setFilterCompanyId("");
                   setStatus("all");
                 }}
-                className="inline-flex items-center gap-1 h-11 rounded-lg px-3 text-sm font-medium text-gray-500 hover:text-error-500"
+                className="col-span-2 inline-flex h-11 items-center justify-center gap-1 rounded-lg px-3 text-sm font-medium text-gray-500 hover:text-error-500 sm:col-auto"
               >
                 {/* × */}
                 <svg
@@ -258,35 +258,33 @@ export default function Product() {
             )}
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <span className="text-sm text-gray-500 dark:text-gray-400">
               {loading ? "Loading…" : `${visible.length} of ${products.length}`}
             </span>
             <button
               onClick={reload}
               disabled={loading}
-              className="h-11 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+              className="h-11 flex-1 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03] sm:flex-none"
             >
               Refresh
             </button>
             {can("product", "view") && (
               <Link
                 to="/product/bulk-prices"
-                className="inline-flex items-center h-11 px-4 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+                className="inline-flex h-11 flex-1 items-center justify-center rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03] sm:flex-none"
               >
                 Bulk prices
               </Link>
             )}
             {can("product", "add") && (
-              <>
-                <Link
-                  to="/product/new"
-                  data-tour="new-product-btn"
-                  className="inline-flex items-center h-11 px-4 text-sm font-medium text-white rounded-lg bg-brand-500 hover:bg-brand-600"
-                >
-                  + New product
-                </Link>
-              </>
+              <Link
+                to="/product/new"
+                data-tour="new-product-btn"
+                className="inline-flex h-11 w-full items-center justify-center rounded-lg bg-brand-500 px-4 text-sm font-medium text-white hover:bg-brand-600 sm:w-auto"
+              >
+                + New product
+              </Link>
             )}
           </div>
         </div>

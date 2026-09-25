@@ -89,11 +89,15 @@ export default function App() {
               <Route path="/users" element={<Users />} />
             </Route>
 
-            {/* Admin-only: attributes and role/permission management. */}
+            {/* Admin-only: attributes and activity. */}
             <Route element={<RequireAdmin />}>
               <Route path="/product/attributes" element={<Attributes />} />
-              <Route path="/roles" element={<Roles />} />
               <Route path="/activity" element={<Activity />} />
+            </Route>
+
+            {/* Roles & permissions: admins and staff with the role permission. */}
+            <Route element={<RequireCan resource="role" action="view" />}>
+              <Route path="/roles" element={<Roles />} />
             </Route>
 
             {/* Approvals: admins and staff with the approval permission. */}

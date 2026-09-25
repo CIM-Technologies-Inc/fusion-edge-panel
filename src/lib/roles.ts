@@ -7,6 +7,7 @@ export const RESOURCES = [
   "brand",
   "category",
   "users",
+  "role",
   "media",
   "approval",
 ] as const;
@@ -32,6 +33,7 @@ export const RESOURCE_LABEL: Record<Resource, string> = {
   brand: "Brands",
   category: "Categories",
   users: "Users",
+  role: "Roles",
   media: "Media",
   approval: "Approvals",
 };
@@ -85,6 +87,21 @@ export async function updateRole(
 export async function deleteRole(id: string): Promise<{ error: string | null }> {
   const { error } = await supabase.from("roles").delete().eq("id", id);
   return { error: error?.message ?? null };
+}
+
+/**
+ * Persist a manual role order. `orderedIds` is the full list of role ids in the
+ * desired order; each row's `position` is set to its index. Admin-only (RLS).
+ */
+export async function reorderRoles(
+  orderedIds: string[]
+): Promise<{ error: string | null }> {
+  const updates = orderedIds.map((id, position) =>
+    supabase.from("roles").update({ position }).eq("id", id)
+  );
+  const results = await Promise.all(updates);
+  const failed = results.find((r) => r.error);
+  return { error: failed?.error?.message ?? null };
 }
 
 /** How many users hold a role — to warn before deleting. */

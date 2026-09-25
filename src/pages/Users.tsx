@@ -310,7 +310,7 @@ export default function Users() {
                   value={roleFilter}
                   onChange={(e) => setRoleFilter(e.target.value)}
                   aria-label="Filter by role"
-                  className="h-11 rounded-lg border border-gray-300 bg-transparent px-4 text-sm text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                  className="col-span-2 h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 text-sm text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 sm:col-auto sm:w-auto"
                 >
                   <option value="">All roles</option>
                   {assignableRoles.map((r) => (
@@ -821,7 +821,7 @@ export default function Users() {
                 </p>
                 {perms === null ? (
                   <p className="text-sm text-gray-600 dark:text-gray-300">
-                    Super Admin — full access to everything.
+                    Developer — full access to everything.
                   </p>
                 ) : perms.length === 0 ? (
                   <p className="text-sm text-gray-500 dark:text-gray-400">

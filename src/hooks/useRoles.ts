@@ -7,6 +7,7 @@ export type Role = {
   description: string | null;
   is_system: boolean;
   is_company: boolean;
+  position?: number | null;
 };
 
 /** All roles (from the roles table), for pickers and the permissions page. */
@@ -25,9 +26,9 @@ export function useRoles() {
     const [rolesRes, permsRes] = await Promise.all([
       supabase
         .from("roles")
-        // System roles (Super Admin) first, then the rest alphabetically.
-        .select("id, name, description, is_system, is_company")
-        .order("is_system", { ascending: false })
+        // Manual order first (position), falling back to name for ties/nulls.
+        .select("id, name, description, is_system, is_company, position")
+        .order("position", { ascending: true, nullsFirst: false })
         .order("name"),
       supabase.from("role_permissions").select("role_id, resource, action"),
     ]);

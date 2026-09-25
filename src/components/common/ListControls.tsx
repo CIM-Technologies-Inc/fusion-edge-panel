@@ -32,35 +32,37 @@ export function ListToolbar({
 }: ToolbarProps) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-center">
         <input
           type="search"
           value={query}
           onChange={(e) => onQuery(e.target.value)}
           placeholder={placeholder}
-          className={`${control} w-full placeholder:text-gray-400 dark:placeholder:text-white/30 sm:w-72`}
+          className={`${control} col-span-2 w-full placeholder:text-gray-400 dark:placeholder:text-white/30 sm:w-72`}
         />
-        <select
-          value={sortKey}
-          onChange={(e) => onSortKey(e.target.value)}
-          aria-label="Sort by"
-          className={`${control} dark:bg-gray-900`}
-        >
-          {sortOptions.map((o) => (
-            <option key={o.value} value={o.value}>
-              Sort: {o.label}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          onClick={onToggleDir}
-          aria-label={`Sort ${dir === "asc" ? "ascending" : "descending"}`}
-          title={dir === "asc" ? "Ascending" : "Descending"}
-          className="h-11 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
-        >
-          {dir === "asc" ? "↑ Asc" : "↓ Desc"}
-        </button>
+        <div className="col-span-2 flex sm:col-auto">
+          <select
+            value={sortKey}
+            onChange={(e) => onSortKey(e.target.value)}
+            aria-label="Sort by"
+            className={`${control} w-full rounded-r-none dark:bg-gray-900 sm:w-auto`}
+          >
+            {sortOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                Sort: {o.label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={onToggleDir}
+            aria-label={`Sort ${dir === "asc" ? "ascending" : "descending"}`}
+            title={dir === "asc" ? "Ascending" : "Descending"}
+            className="h-11 shrink-0 rounded-r-lg border border-l-0 border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+          >
+            {dir === "asc" ? "↑ Asc" : "↓ Desc"}
+          </button>
+        </div>
         {filters}
       </div>
       <span className="text-sm text-gray-500 dark:text-gray-400">{summary}</span>

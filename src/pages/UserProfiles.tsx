@@ -58,7 +58,7 @@ export default function UserProfiles() {
     const companyId =
       (p as { company_id?: string | null } | null)?.company_id ?? null;
 
-    let roleName: string | null = isAdmin ? "Super Admin" : null;
+    let roleName: string | null = isAdmin ? "Developer" : null;
     if (!isAdmin && roleId) {
       const { data: r } = await supabase
         .from("roles")

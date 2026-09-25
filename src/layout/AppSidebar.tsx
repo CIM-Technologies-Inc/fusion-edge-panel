@@ -121,14 +121,29 @@ const AppSidebar: React.FC = () => {
         ? [productItem] // just products → a plain link
         : [{ icon: <BoxIcon />, name: "Product", subItems: productSub }];
 
+    // Users group: "All users" (users.view) and "Roles & permissions"
+    // (role.view). If only one applies, it collapses to a single link.
+    const usersSub = [
+      ...(can("users", "view")
+        ? [{ name: "All users", path: "/users" }]
+        : []),
+      ...(can("role", "view")
+        ? [{ name: "Roles & permissions", path: "/roles" }]
+        : []),
+    ];
+    const usersNav: NavItem[] =
+      usersSub.length === 0
+        ? []
+        : usersSub.length === 1
+        ? [{ icon: <GroupIcon />, name: "Users", path: usersSub[0].path }]
+        : [{ icon: <GroupIcon />, name: "Users", subItems: usersSub }];
+
     navItems = [
       dashboardItem,
       ...productNav,
       ...(can("approval", "approve") ? [approvalsNavItem] : []),
       ...(can("media", "view") ? [mediaNavItem] : []),
-      ...(can("users", "view")
-        ? [{ icon: <GroupIcon />, name: "Users", path: "/users" }]
-        : []),
+      ...usersNav,
     ];
   }
 
@@ -332,7 +347,7 @@ const AppSidebar: React.FC = () => {
       onMouseLeave={() => setIsHovered(false)}
     >
       <div
-        className={`py-8 flex ${
+        className={`py-8 hidden lg:flex ${
           !isExpanded && !isHovered ? "lg:justify-center" : "justify-start"
         }`}
       >
