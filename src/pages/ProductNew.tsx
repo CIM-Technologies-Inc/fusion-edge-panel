@@ -30,6 +30,7 @@ import {
   createTerm,
   resolveRequiredAssignments,
   syncProductAttributes,
+  withBrandAttribute,
   type AttributeAssignment,
 } from "../lib/attributes";
 import { getRequiredAttributes } from "../lib/requiredAttributes";
@@ -392,13 +393,19 @@ export default function ProductNew() {
     }));
 
     // Category-required attributes: create/find the attribute + a product-owned
-    // term for each typed value, and merge them in as (spec) assignments.
+    // term for each typed value, and merge them in as (spec) assignments. The
+    // brand is always added as data-cim-brand (its value comes from the Brand
+    // dropdown, so it's edited there — never in the attributes UI).
     let requiredAssignments: AttributeAssignment[] = [];
-    if (requiredAttrs.length > 0) {
-      const filled = requiredAttrs.map((ra) => ({
+    const brandName = companyBrands.find((b) => b.id === brandId)?.name ?? "";
+    const filled = withBrandAttribute(
+      requiredAttrs.map((ra) => ({
         name: ra.name,
         value: reqValues[ra.name] ?? ra.default ?? "",
-      }));
+      })),
+      brandName
+    );
+    if (filled.length > 0) {
       const res = await resolveRequiredAssignments(id, filled);
       if (res.error) {
         setSaving(false);

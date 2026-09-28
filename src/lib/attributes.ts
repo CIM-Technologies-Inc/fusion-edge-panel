@@ -142,6 +142,28 @@ export async function createTerm(
 }
 
 /**
+ * The attribute slug that mirrors a product's brand. Its value is always the
+ * selected brand's NAME — set from the Brand dropdown, never edited directly in
+ * the attributes UI (it isn't rendered there, and data-* attributes are hidden
+ * from "Add existing attribute").
+ */
+export const BRAND_ATTR_NAME = "data-cim-brand";
+
+/**
+ * Append the brand-sourced `data-cim-brand` value to a list of required
+ * attribute values, so every product carries its brand as a spec attribute.
+ * Pass the selected brand's name; an empty/blank name is skipped.
+ */
+export function withBrandAttribute(
+  filled: { name: string; value: string }[],
+  brandName: string | null | undefined
+): { name: string; value: string }[] {
+  const value = (brandName ?? "").trim();
+  const rest = filled.filter((f) => f.name !== BRAND_ATTR_NAME);
+  return value ? [...rest, { name: BRAND_ATTR_NAME, value }] : rest;
+}
+
+/**
  * Turn category-required attributes (name + typed value) into attribute
  * assignments for a product, reusing the global attribute system.
  *

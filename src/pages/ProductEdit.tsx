@@ -38,6 +38,8 @@ import MediaPicker from "../components/media/MediaPicker";
 import {
   resolveRequiredAssignments,
   syncProductAttributes,
+  withBrandAttribute,
+  BRAND_ATTR_NAME,
   type AttributeAssignment,
 } from "../lib/attributes";
 import { getRequiredAttributes } from "../lib/requiredAttributes";
@@ -305,8 +307,10 @@ export default function ProductEditPage() {
 
   // The config attributes are managed only in the "Required for this category"
   // card — hide them from the regular Attributes list so they don't appear
-  // twice. Matched by slug.
+  // twice. The brand attribute (data-cim-brand) is hidden too: it's sourced
+  // from the Brand dropdown and never edited in the attributes UI. Matched by slug.
   const requiredSlugSet = new Set(requiredAttrs.map((ra) => reqKey(ra.name)));
+  requiredSlugSet.add(reqKey(BRAND_ATTR_NAME));
   const requiredAttrIdSet = new Set(
     attributes.filter((a) => requiredSlugSet.has(a.slug)).map((a) => a.id)
   );
@@ -549,9 +553,10 @@ export default function ProductEditPage() {
     }
 
     // Category-required attributes: drop the product's existing assignments for
-    // those config attributes (matched by slug), then re-resolve fresh from the
-    // field values so edits replace rather than duplicate them.
+    // those config attributes (matched by slug) AND the brand attribute, then
+    // re-resolve fresh so edits (and brand changes) replace, not duplicate.
     const reqSlugs = new Set(requiredAttrs.map((ra) => reqKey(ra.name)));
+    reqSlugs.add(reqKey(BRAND_ATTR_NAME));
     const reqAttrIds = new Set(
       attributes
         .filter((a) => reqSlugs.has(a.slug))
@@ -561,12 +566,20 @@ export default function ProductEditPage() {
       (a) => !reqAttrIds.has(a.attribute_id)
     );
 
+    // The brand's value comes from the Brand dropdown (never edited in the
+    // attributes UI): always stored as data-cim-brand = the brand's name.
+    const brandName =
+      companyBrands.find((b) => b.id === form.brand_id)?.name ?? "";
+
     let requiredAssignments: AttributeAssignment[] = [];
-    if (requiredAttrs.length > 0) {
-      const filled = requiredAttrs.map((ra) => ({
+    const filled = withBrandAttribute(
+      requiredAttrs.map((ra) => ({
         name: ra.name,
         value: reqValues[reqKey(ra.name)] ?? ra.default ?? "",
-      }));
+      })),
+      brandName
+    );
+    if (filled.length > 0) {
       const res = await resolveRequiredAssignments(product.id, filled);
       if (res.error) {
         setSaving(false);
