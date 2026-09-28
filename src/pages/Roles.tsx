@@ -242,6 +242,11 @@ export default function Roles() {
     reload();
   };
 
+  // A system role (super admin) has full access, so every box shows checked
+  // (read-only). Other roles show whatever permissions they actually hold.
+  const boxChecked = (key: PermKey) =>
+    (selected?.is_system ?? false) || perms.has(key);
+
   // The editor body — reused in the desktop column and the mobile drawer.
   const editor = !selected ? (
     <div className={`${shell} text-center`}>
@@ -299,8 +304,8 @@ export default function Roles() {
 
       {selected.is_system && (
         <p className="text-theme-xs text-gray-400">
-          This is a system role. Its permissions are managed automatically and
-          can't be edited here.
+          This is the built-in super-admin role — it has full access to
+          everything. Its permissions are fixed and can't be edited here.
         </p>
       )}
 
@@ -351,7 +356,7 @@ export default function Roles() {
                         <label className="inline-flex flex-col items-center gap-1">
                           <input
                             type="checkbox"
-                            checked={perms.has(key)}
+                            checked={boxChecked(key)}
                             disabled={selected.is_system || loadingPerms}
                             onChange={() => toggle(key)}
                             className="w-4 h-4 rounded accent-brand-500 disabled:opacity-50"
@@ -380,7 +385,7 @@ export default function Roles() {
                     <td key={a} className="px-3 py-2.5 text-center">
                       <input
                         type="checkbox"
-                        checked={perms.has(key)}
+                        checked={boxChecked(key)}
                         disabled={selected.is_system || loadingPerms}
                         onChange={() => toggle(key)}
                         className="w-4 h-4 rounded accent-brand-500 disabled:opacity-50"
@@ -395,12 +400,12 @@ export default function Roles() {
       </div>
 
       {/* Extra product action: feature products. Staff-only. */}
-      {!isCompany && !selected.is_system && (
+      {!isCompany && (
         <label className="flex items-start gap-3 cursor-pointer">
           <input
             type="checkbox"
-            checked={perms.has("product.feature")}
-            disabled={loadingPerms}
+            checked={boxChecked("product.feature")}
+            disabled={selected.is_system || loadingPerms}
             onChange={() => toggle("product.feature")}
             className="w-4 h-4 mt-0.5 rounded accent-brand-500 disabled:opacity-50"
           />
@@ -416,48 +421,44 @@ export default function Roles() {
       )}
 
       {/* Extra product action: edit stock. */}
-      {!selected.is_system && (
-        <label className="flex items-start gap-3 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={perms.has("product.stock")}
-            disabled={loadingPerms}
-            onChange={() => toggle("product.stock")}
-            className="w-4 h-4 mt-0.5 rounded accent-brand-500 disabled:opacity-50"
-          />
-          <span>
-            <span className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Edit stock
-            </span>
-            <span className="block text-theme-xs text-gray-400">
-              Lets this role change a product's inventory quantity without full
-              edit access.
-            </span>
+      <label className="flex items-start gap-3 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={boxChecked("product.stock")}
+          disabled={selected.is_system || loadingPerms}
+          onChange={() => toggle("product.stock")}
+          className="w-4 h-4 mt-0.5 rounded accent-brand-500 disabled:opacity-50"
+        />
+        <span>
+          <span className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+            Edit stock
           </span>
-        </label>
-      )}
+          <span className="block text-theme-xs text-gray-400">
+            Lets this role change a product's inventory quantity without full
+            edit access.
+          </span>
+        </span>
+      </label>
 
       {/* Extra product action: edit pricing (price + sale price). */}
-      {!selected.is_system && (
-        <label className="flex items-start gap-3 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={perms.has("product.price")}
-            disabled={loadingPerms}
-            onChange={() => toggle("product.price")}
-            className="w-4 h-4 mt-0.5 rounded accent-brand-500 disabled:opacity-50"
-          />
-          <span>
-            <span className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Edit pricing
-            </span>
-            <span className="block text-theme-xs text-gray-400">
-              Lets this role change a product's price and sale price without full
-              edit access.
-            </span>
+      <label className="flex items-start gap-3 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={boxChecked("product.price")}
+          disabled={selected.is_system || loadingPerms}
+          onChange={() => toggle("product.price")}
+          className="w-4 h-4 mt-0.5 rounded accent-brand-500 disabled:opacity-50"
+        />
+        <span>
+          <span className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+            Edit pricing
           </span>
-        </label>
-      )}
+          <span className="block text-theme-xs text-gray-400">
+            Lets this role change a product's price and sale price without full
+            edit access.
+          </span>
+        </span>
+      </label>
 
       <div className="flex justify-between gap-3 pt-2">
         {!selected.is_system ? (
