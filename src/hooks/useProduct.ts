@@ -67,6 +67,7 @@ function normalise(row: any): ProductDetail {
       sku: v.sku,
       price_cents: v.price_cents,
       sale_price_cents: v.sale_price_cents,
+      quantity: v.quantity,
       in_stock: v.in_stock,
       position: v.position,
       terms: v.variation_terms ?? [],
