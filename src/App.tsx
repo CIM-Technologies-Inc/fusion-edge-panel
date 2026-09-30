@@ -27,6 +27,7 @@ import Companies from "./pages/Companies";
 import CompanyDetail from "./pages/CompanyDetail";
 import MyCompany from "./pages/MyCompany";
 import BulkPrices from "./pages/BulkPrices";
+import ProductImport from "./pages/ProductImport";
 import Users from "./pages/Users";
 import Roles from "./pages/Roles";
 import Approvals from "./pages/Approvals";
@@ -36,6 +37,7 @@ import RequireAdmin from "./components/auth/RequireAdmin";
 import RequireProductManager from "./components/auth/RequireProductManager";
 import RequireCan from "./components/auth/RequireCan";
 import RequireAuth from "./components/auth/RequireAuth";
+import RequireStaff from "./components/auth/RequireStaff";
 import AppLayout from "./layout/AppLayout";
 import { ScrollToTop } from "./components/common/ScrollToTop";
 import Home from "./pages/Dashboard/Home";
@@ -50,8 +52,11 @@ export default function App() {
         <TourProvider>
         <TourOverlay />
         <Routes>
-          {/* Dashboard Layout — requires a signed-in user */}
+          {/* Dashboard Layout — requires a signed-in STAFF user. Customers
+              share the same Supabase as the storefront, so RequireStaff stops
+              a customer login from reaching the admin panel. */}
           <Route element={<RequireAuth />}>
+          <Route element={<RequireStaff />}>
           <Route element={<AppLayout />}>
             <Route index path="/" element={<Home />} />
 
@@ -64,6 +69,7 @@ export default function App() {
               <Route path="/product/new" element={<ProductNew />} />
               <Route path="/product/:slug/edit" element={<ProductEdit />} />
               <Route path="/product/bulk-prices" element={<BulkPrices />} />
+              <Route path="/product/import" element={<ProductImport />} />
             </Route>
 
             {/* Permission-gated management pages. */}
@@ -130,6 +136,7 @@ export default function App() {
             {/* Charts */}
             <Route path="/line-chart" element={<LineChart />} />
             <Route path="/bar-chart" element={<BarChart />} />
+          </Route>
           </Route>
           </Route>
 

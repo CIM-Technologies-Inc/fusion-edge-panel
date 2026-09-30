@@ -79,6 +79,21 @@ export async function updateProduct(
 }
 
 /**
+ * Toggle a product's Featured flag. Gated by the product.feature permission at
+ * the RLS layer (admins bypass); the UI should also check can("product","feature").
+ */
+export async function setProductFeatured(
+  id: string,
+  featured: boolean
+): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from("products")
+    .update({ featured })
+    .eq("id", id);
+  return { error: error?.message ?? null };
+}
+
+/**
  * Delete a product. Its variations, images and attribute links are removed by
  * ON DELETE CASCADE; RLS lets admins delete any, suppliers only their own.
  */
