@@ -9,6 +9,7 @@ import { useDashboardStats } from "../../hooks/useDashboardStats";
 import { useAuth } from "../../context/AuthContext";
 import { useTour } from "../tour/TourContext";
 import { formatPrice } from "../../lib/price";
+import ActivityLog from "../common/ActivityLog";
 import type { Product } from "../../types/catalogue";
 
 const card =
@@ -170,10 +171,31 @@ export default function CatalogueDashboard() {
     const otherTotal = cats.slice(6).reduce((s, [, n]) => s + n, 0);
     if (otherTotal > 0) topCats.push(["Other", otherTotal]);
 
-    // Products that need attention.
-    const needs = products.filter(
-      (p) => !p.published || p.images.length === 0
-    );
+    // Products that need attention: a draft, no image, or no price (simple).
+    const needsReason = (p: Product): string[] => {
+      const r: string[] = [];
+      if (p.approval_status === "rejected") r.push("Rejected");
+      else if (!p.published) r.push("Draft");
+      if (p.images.length === 0) r.push("No image");
+      if (p.kind === "simple" && (p.price_cents ?? 0) === 0) r.push("No price");
+      return r;
+    };
+    const needs = products
+      .map((p) => ({ product: p, reasons: needsReason(p) }))
+      .filter((x) => x.reasons.length > 0);
+
+    // Inventory: out of stock, and low stock (1..threshold).
+    const LOW = 5;
+    const outOfStockList = products.filter((p) => (p.quantity ?? 0) === 0);
+    const lowStockList = products
+      .filter((p) => {
+        const q = p.quantity ?? 0;
+        return q > 0 && q <= LOW;
+      })
+      .sort((a, b) => (a.quantity ?? 0) - (b.quantity ?? 0));
+
+    // Products awaiting approval.
+    const pending = products.filter((p) => p.approval_status === "pending");
 
     return {
       published,
@@ -185,6 +207,10 @@ export default function CatalogueDashboard() {
       categoryLabels: topCats.map(([n]) => n),
       categorySeries: topCats.map(([, n]) => n),
       needs,
+      lowStockList,
+      outOfStockList,
+      pending,
+      lowThreshold: LOW,
     };
   }, [products]);
 
@@ -349,7 +375,7 @@ export default function CatalogueDashboard() {
               Needs attention
             </h3>
             <p className="mb-4 text-theme-sm text-gray-500 dark:text-gray-400">
-              Unpublished or missing an image
+              Drafts, rejected, or missing image / price
             </p>
             {derived.needs.length === 0 ? (
               <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -357,7 +383,7 @@ export default function CatalogueDashboard() {
               </p>
             ) : (
               <ul className="space-y-2">
-                {derived.needs.slice(0, 6).map((p) => (
+                {derived.needs.slice(0, 6).map(({ product: p, reasons }) => (
                   <li key={p.id}>
                     <Link
                       to={`/product/${p.slug}/edit`}
@@ -366,17 +392,22 @@ export default function CatalogueDashboard() {
                       <span className="text-sm text-gray-700 truncate dark:text-gray-300">
                         {p.name}
                       </span>
-                      <span className="flex gap-1.5 shrink-0">
-                        {!p.published && (
-                          <Badge size="sm" color="warning">
-                            Draft
+                      <span className="flex flex-wrap justify-end gap-1.5 shrink-0">
+                        {reasons.map((r) => (
+                          <Badge
+                            key={r}
+                            size="sm"
+                            color={
+                              r === "Rejected"
+                                ? "error"
+                                : r === "Draft"
+                                ? "warning"
+                                : "light"
+                            }
+                          >
+                            {r}
                           </Badge>
-                        )}
-                        {p.images.length === 0 && (
-                          <Badge size="sm" color="error">
-                            No image
-                          </Badge>
-                        )}
+                        ))}
                       </span>
                     </Link>
                   </li>
@@ -388,6 +419,129 @@ export default function CatalogueDashboard() {
                 )}
               </ul>
             )}
+          </div>
+        </div>
+      </div>
+
+      {/* Pending approvals + low stock + recent activity */}
+      <div className="grid grid-cols-12 gap-4 md:gap-6">
+        {/* Pending approvals */}
+        <div className="col-span-12 md:col-span-6 xl:col-span-4">
+          <div className={card}>
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="font-semibold text-gray-800 dark:text-white/90">
+                Awaiting approval
+              </h3>
+              {derived.pending.length > 0 && (
+                <Badge size="sm" color="warning">
+                  {derived.pending.length}
+                </Badge>
+              )}
+            </div>
+            {derived.pending.length === 0 ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Nothing waiting for review.
+              </p>
+            ) : (
+              <>
+                <ul className="space-y-2">
+                  {derived.pending.slice(0, 5).map((p) => (
+                    <li key={p.id}>
+                      <Link
+                        to={isAdmin ? `/approvals/${p.slug}` : `/product/${p.slug}`}
+                        className="block truncate rounded-lg border border-gray-100 px-3 py-2 text-sm text-gray-700 hover:border-gray-300 dark:border-gray-800 dark:text-gray-300 dark:hover:border-gray-700"
+                      >
+                        {p.name}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+                {isAdmin && (
+                  <Link
+                    to="/approvals"
+                    className="mt-3 inline-block text-sm font-medium text-brand-500 hover:text-brand-600"
+                  >
+                    Review all →
+                  </Link>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Low / out of stock */}
+        <div className="col-span-12 md:col-span-6 xl:col-span-4">
+          <div className={card}>
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="font-semibold text-gray-800 dark:text-white/90">
+                Low stock
+              </h3>
+              {derived.outOfStockList.length > 0 && (
+                <Badge size="sm" color="error">
+                  {derived.outOfStockList.length} out
+                </Badge>
+              )}
+            </div>
+            {derived.lowStockList.length === 0 &&
+            derived.outOfStockList.length === 0 ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Stock levels look healthy.
+              </p>
+            ) : (
+              <>
+                <ul className="space-y-2">
+                  {[...derived.outOfStockList, ...derived.lowStockList]
+                    .slice(0, 5)
+                    .map((p) => {
+                      const q = p.quantity ?? 0;
+                      return (
+                        <li key={p.id}>
+                          <Link
+                            to={`/product/${p.slug}/edit`}
+                            className="flex items-center justify-between gap-3 rounded-lg border border-gray-100 px-3 py-2 hover:border-gray-300 dark:border-gray-800 dark:hover:border-gray-700"
+                          >
+                            <span className="truncate text-sm text-gray-700 dark:text-gray-300">
+                              {p.name}
+                            </span>
+                            <Badge
+                              size="sm"
+                              color={q === 0 ? "error" : "warning"}
+                            >
+                              {q === 0 ? "Out" : `${q} left`}
+                            </Badge>
+                          </Link>
+                        </li>
+                      );
+                    })}
+                </ul>
+                <Link
+                  to="/product/bulk-inventory"
+                  className="mt-3 inline-block text-sm font-medium text-brand-500 hover:text-brand-600"
+                >
+                  Manage inventory →
+                </Link>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Recent activity */}
+        <div className="col-span-12 xl:col-span-4">
+          <div className={card}>
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="font-semibold text-gray-800 dark:text-white/90">
+                Recent activity
+              </h3>
+              {isAdmin && (
+                <Link
+                  to="/activity"
+                  className="text-sm font-medium text-brand-500 hover:text-brand-600"
+                >
+                  View all →
+                </Link>
+              )}
+            </div>
+            <ActivityLog limit={6} showRecord />
           </div>
         </div>
       </div>
