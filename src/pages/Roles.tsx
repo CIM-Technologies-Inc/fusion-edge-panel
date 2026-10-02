@@ -460,6 +460,45 @@ export default function Roles() {
         </span>
       </label>
 
+      {/* Extra product action: export products to CSV. */}
+      <label className="flex items-start gap-3 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={boxChecked("product.export")}
+          disabled={selected.is_system || loadingPerms}
+          onChange={() => toggle("product.export")}
+          className="w-4 h-4 mt-0.5 rounded accent-brand-500 disabled:opacity-50"
+        />
+        <span>
+          <span className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+            Export products
+          </span>
+          <span className="block text-theme-xs text-gray-400">
+            Lets this role export the product list to a CSV file.
+          </span>
+        </span>
+      </label>
+
+      {/* Extra product action: import products from CSV. */}
+      <label className="flex items-start gap-3 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={boxChecked("product.import")}
+          disabled={selected.is_system || loadingPerms}
+          onChange={() => toggle("product.import")}
+          className="w-4 h-4 mt-0.5 rounded accent-brand-500 disabled:opacity-50"
+        />
+        <span>
+          <span className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+            Import products
+          </span>
+          <span className="block text-theme-xs text-gray-400">
+            Lets this role import products from a CSV file (creates drafts /
+            updates existing).
+          </span>
+        </span>
+      </label>
+
       <div className="flex justify-between gap-3 pt-2">
         {!selected.is_system ? (
           <button
