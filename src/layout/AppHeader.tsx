@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { useSidebar } from "../context/SidebarContext";
 import { ThemeToggleButton } from "../components/common/ThemeToggleButton";
 import NotificationDropdown from "../components/header/NotificationDropdown";
@@ -21,6 +21,17 @@ const AppHeader: React.FC = () => {
 
   const toggleApplicationMenu = () => {
     setApplicationMenuOpen(!isApplicationMenuOpen);
+  };
+
+  const navigate = useNavigate();
+  const [search, setSearch] = useState("");
+
+  // Submit (Enter) → go to the product list filtered by the query. The product
+  // list is the main searchable catalogue, so that's the natural destination.
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = search.trim();
+    navigate(q ? `/product?q=${encodeURIComponent(q)}` : "/product");
   };
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -121,7 +132,7 @@ const AppHeader: React.FC = () => {
           </button>
 
           <div className="hidden lg:block">
-            <form>
+            <form onSubmit={handleSearchSubmit}>
               <div className="relative">
                 <span className="absolute -translate-y-1/2 pointer-events-none left-4 top-1/2">
                   <svg
@@ -143,7 +154,9 @@ const AppHeader: React.FC = () => {
                 <input
                   ref={inputRef}
                   type="text"
-                  placeholder="Search or type command..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search products…"
                   className="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-200 bg-transparent py-2.5 pl-12 pr-14 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-800 dark:bg-gray-900 dark:bg-white/[0.03] dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800 xl:w-[430px]"
                 />
 
