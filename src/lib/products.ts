@@ -94,6 +94,47 @@ export async function setProductFeatured(
 }
 
 /**
+ * Bulk-set the Featured flag on many products. Gated by product.feature (RLS).
+ */
+export async function setProductsFeatured(
+  ids: string[],
+  featured: boolean
+): Promise<{ error: string | null }> {
+  if (ids.length === 0) return { error: null };
+  const { error } = await supabase
+    .from("products")
+    .update({ featured })
+    .in("id", ids);
+  return { error: error?.message ?? null };
+}
+
+/**
+ * Bulk-set the Published flag on many products. Gated by product.edit (RLS).
+ * Note: products pending approval are governed by their own flow; RLS will
+ * reject changes a caller isn't allowed to make.
+ */
+export async function setProductsPublished(
+  ids: string[],
+  published: boolean
+): Promise<{ error: string | null }> {
+  if (ids.length === 0) return { error: null };
+  const { error } = await supabase
+    .from("products")
+    .update({ published })
+    .in("id", ids);
+  return { error: error?.message ?? null };
+}
+
+/** Bulk-delete products. Cascades like deleteProduct; RLS scopes what's allowed. */
+export async function deleteProducts(
+  ids: string[]
+): Promise<{ error: string | null }> {
+  if (ids.length === 0) return { error: null };
+  const { error } = await supabase.from("products").delete().in("id", ids);
+  return { error: error?.message ?? null };
+}
+
+/**
  * Delete a product. Its variations, images and attribute links are removed by
  * ON DELETE CASCADE; RLS lets admins delete any, suppliers only their own.
  */

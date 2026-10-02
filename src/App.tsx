@@ -27,6 +27,7 @@ import Companies from "./pages/Companies";
 import CompanyDetail from "./pages/CompanyDetail";
 import MyCompany from "./pages/MyCompany";
 import BulkPrices from "./pages/BulkPrices";
+import BulkInventory from "./pages/BulkInventory";
 import ProductImport from "./pages/ProductImport";
 import Users from "./pages/Users";
 import Roles from "./pages/Roles";
@@ -69,6 +70,11 @@ export default function App() {
               <Route path="/product/new" element={<ProductNew />} />
               <Route path="/product/:slug/edit" element={<ProductEdit />} />
               <Route path="/product/bulk-prices" element={<BulkPrices />} />
+              <Route path="/product/bulk-inventory" element={<BulkInventory />} />
+            </Route>
+
+            {/* CSV import: admins and roles with the product.import permission. */}
+            <Route element={<RequireCan resource="product" action="import" />}>
               <Route path="/product/import" element={<ProductImport />} />
             </Route>
 

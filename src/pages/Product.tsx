@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import PageBreadcrumb from "../components/common/PageBreadCrumb";
 import PageMeta from "../components/common/PageMeta";
 import ProductTable from "../components/product/ProductTable";
@@ -12,15 +12,38 @@ import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import {
   deleteProduct,
+  deleteProducts,
   duplicateProduct,
   setProductFeatured,
+  setProductsFeatured,
+  setProductsPublished,
 } from "../lib/products";
 import { downloadCsv } from "../lib/csv";
 import { buildWooProductCsv } from "../lib/productExport";
+import MultiSelect from "../components/common/MultiSelect";
+import { Pager } from "../components/common/ListControls";
 import type { Product as ProductType } from "../types/catalogue";
 
-type StatusFilter = "all" | "published" | "draft" | "pending" | "rejected";
+const PAGE_SIZES = [10, 25, 50, 100];
+
+type ProductStatus = "published" | "draft" | "pending" | "rejected";
+const STATUS_OPTIONS: { value: ProductStatus; label: string }[] = [
+  { value: "published", label: "Published" },
+  { value: "draft", label: "Draft" },
+  { value: "pending", label: "Pending approval" },
+  { value: "rejected", label: "Rejected" },
+];
 type SortKey = "name" | "created" | "updated";
+
+/** The status bucket a product falls into. */
+const statusOf = (p: ProductType): ProductStatus =>
+  p.approval_status === "pending"
+    ? "pending"
+    : p.approval_status === "rejected"
+    ? "rejected"
+    : p.published
+    ? "published"
+    : "draft";
 
 const shell =
   "rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/[0.03]";
@@ -48,15 +71,33 @@ export default function Product() {
   }, [allProducts, isAdmin, companyId]);
   const { notify } = useToast();
   const navigate = useNavigate();
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<StatusFilter>("all");
+  const [searchParams] = useSearchParams();
+  const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
+
+  // Keep the search box in sync when arriving via the header search (?q=…).
+  useEffect(() => {
+    const q = searchParams.get("q");
+    if (q !== null) setQuery(q);
+  }, [searchParams]);
+  // Multi-select filters: empty array = no filter (all).
+  const [statuses, setStatuses] = useState<ProductStatus[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>("created");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   // Featured products float to the top only in the DEFAULT view. Once the user
   // clicks a column header to sort, honor that sort purely (no featured-first).
   const [userSorted, setUserSorted] = useState(false);
-  const [categoryId, setCategoryId] = useState("");
-  const [filterCompanyId, setFilterCompanyId] = useState("");
+  const [categoryIds, setCategoryIds] = useState<string[]>([]);
+  const [filterCompanyIds, setFilterCompanyIds] = useState<string[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  // Bulk selection (by product id) and the in-flight bulk action, if any.
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  // Date-range filter: which date it applies to, and the From/To bounds (local
+  // yyyy-mm-dd). Empty bound = open on that side.
+  const [dateField, setDateField] = useState<"created" | "updated">("created");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -142,21 +183,30 @@ export default function Product() {
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
+    // Inclusive date bounds (ms) for the chosen date field.
+    const fromMs = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null;
+    const toMs = dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : null;
     const filtered = products.filter((p) => {
-      if (status === "published" && !p.published) return false;
-      if (status === "pending" && p.approval_status !== "pending") return false;
-      if (status === "rejected" && p.approval_status !== "rejected")
-        return false;
-      // "Draft" = unpublished and not awaiting/failing approval.
+      // Multi-select filters: empty = no restriction, else match ANY selected.
+      if (statuses.length > 0 && !statuses.includes(statusOf(p))) return false;
       if (
-        status === "draft" &&
-        (p.published ||
-          p.approval_status === "pending" ||
-          p.approval_status === "rejected")
+        categoryIds.length > 0 &&
+        !(p.category && categoryIds.includes(p.category.id))
       )
         return false;
-      if (categoryId && p.category?.id !== categoryId) return false;
-      if (filterCompanyId && p.company_id !== filterCompanyId) return false;
+      if (
+        filterCompanyIds.length > 0 &&
+        !(p.company_id && filterCompanyIds.includes(p.company_id))
+      )
+        return false;
+      // Date range on the chosen field (created/updated).
+      if (fromMs !== null || toMs !== null) {
+        const iso = dateField === "updated" ? p.updated_at : p.created_at;
+        const t = iso ? new Date(iso).getTime() : NaN;
+        if (Number.isNaN(t)) return false;
+        if (fromMs !== null && t < fromMs) return false;
+        if (toMs !== null && t > toMs) return false;
+      }
       if (!q) return true;
       return (
         p.name.toLowerCase().includes(q) ||
@@ -181,9 +231,12 @@ export default function Product() {
   }, [
     products,
     query,
-    status,
-    categoryId,
-    filterCompanyId,
+    statuses,
+    categoryIds,
+    filterCompanyIds,
+    dateField,
+    dateFrom,
+    dateTo,
     sortKey,
     sortDir,
     userSorted,
@@ -191,14 +244,148 @@ export default function Product() {
 
   // How many filters are active (search excluded — it has its own field).
   const activeFilterCount =
-    (categoryId ? 1 : 0) +
-    (filterCompanyId ? 1 : 0) +
-    (status !== "all" ? 1 : 0);
+    (categoryIds.length > 0 ? 1 : 0) +
+    (filterCompanyIds.length > 0 ? 1 : 0) +
+    (statuses.length > 0 ? 1 : 0) +
+    (dateFrom || dateTo ? 1 : 0);
+
+  // Pagination over the filtered/sorted list.
+  const pageCount = Math.max(1, Math.ceil(visible.length / pageSize));
+  // Snap back to page 1 and clear bulk selection when the filtered set changes.
+  useEffect(() => {
+    setPage(1);
+    setCheckedIds(new Set());
+  }, [
+    query,
+    statuses,
+    categoryIds,
+    filterCompanyIds,
+    dateField,
+    dateFrom,
+    dateTo,
+    sortKey,
+    sortDir,
+    pageSize,
+  ]);
+  const safePage = Math.min(page, pageCount);
+  const paged = visible.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const rangeStart = visible.length === 0 ? 0 : (safePage - 1) * pageSize + 1;
+  const rangeEnd = Math.min(safePage * pageSize, visible.length);
+
+  // Bulk selection helpers (operate on the current page).
+  const toggleCheck = (id: string) =>
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  const allPageChecked =
+    paged.length > 0 && paged.every((p) => checkedIds.has(p.id));
+  const toggleCheckAll = () =>
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      if (allPageChecked) paged.forEach((p) => next.delete(p.id));
+      else paged.forEach((p) => next.add(p.id));
+      return next;
+    });
+  const clearChecks = () => setCheckedIds(new Set());
+  const checkedCount = checkedIds.size;
+
+  // The selected products as objects (for state-aware filtering).
+  const checkedProducts = products.filter((p) => checkedIds.has(p.id));
+
+  // How many of the selection each action would actually affect — used to
+  // disable buttons that would be a no-op.
+  const publishableCount = checkedProducts.filter(
+    (p) =>
+      !p.published &&
+      p.approval_status !== "pending" &&
+      p.approval_status !== "rejected"
+  ).length;
+  const unpublishableCount = checkedProducts.filter((p) => p.published).length;
+  const toFeatureCount = checkedProducts.filter((p) => !p.featured).length;
+  const toUnfeatureCount = checkedProducts.filter((p) => p.featured).length;
+
+  const runBulk = async (
+    label: string,
+    ids: string[],
+    fn: (ids: string[]) => Promise<{ error: string | null }>
+  ) => {
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    const { error } = await fn(ids);
+    setBulkBusy(false);
+    if (error) {
+      notify("error", `${label} failed`, error);
+      return;
+    }
+    notify("success", label, `${ids.length} product${ids.length === 1 ? "" : "s"}.`);
+    clearChecks();
+    reload();
+  };
+
+  // These only act on products that actually need the change (the buttons are
+  // disabled when the affected count is 0, so no "nothing to do" case here).
+  const bulkPublish = () =>
+    runBulk(
+      "Published",
+      checkedProducts
+        .filter(
+          (p) =>
+            !p.published &&
+            p.approval_status !== "pending" &&
+            p.approval_status !== "rejected"
+        )
+        .map((p) => p.id),
+      (x) => setProductsPublished(x, true)
+    );
+
+  const bulkUnpublish = () =>
+    runBulk(
+      "Unpublished",
+      checkedProducts.filter((p) => p.published).map((p) => p.id),
+      (x) => setProductsPublished(x, false)
+    );
+
+  const bulkFeature = (featured: boolean) =>
+    runBulk(
+      featured ? "Featured" : "Unfeatured",
+      checkedProducts.filter((p) => p.featured !== featured).map((p) => p.id),
+      (x) => setProductsFeatured(x, featured)
+    );
+
+  const bulkDelete = () => {
+    const ids = [...checkedIds];
+    if (ids.length === 0) return;
+    if (
+      !window.confirm(
+        `Delete ${ids.length} product${ids.length === 1 ? "" : "s"}? This also ` +
+          `removes their variations and images and cannot be undone.`
+      )
+    )
+      return;
+    runBulk("Deleted", ids, deleteProducts);
+  };
+
+  const setDatePreset = (days: number) => {
+    const iso = (d: Date) => {
+      const off = d.getTimezoneOffset() * 60000;
+      return new Date(d.getTime() - off).toISOString().slice(0, 10);
+    };
+    const now = new Date();
+    const start = new Date(now);
+    start.setDate(now.getDate() - (days - 1));
+    setDateFrom(iso(start));
+    setDateTo(iso(now));
+  };
 
   const clearFilters = () => {
-    setCategoryId("");
-    setFilterCompanyId("");
-    setStatus("all");
+    setCategoryIds([]);
+    setFilterCompanyIds([]);
+    setStatuses([]);
+    setDateFrom("");
+    setDateTo("");
+    setShowFilters(false);
   };
 
   // Export the filtered products to a WooCommerce-style CSV: one row per
@@ -275,7 +462,7 @@ export default function Product() {
           <div className="ml-auto flex items-center gap-3">
             {/* More actions (occasional): export, import, bulk prices, refresh. */}
             <RowMenu>
-              {can("product", "view") && (
+              {can("product", "export") && (
                 <MenuItem
                   onClick={handleExportCsv}
                   disabled={loading || exporting || visible.length === 0}
@@ -283,7 +470,7 @@ export default function Product() {
                   {exporting ? "Exporting…" : "Export CSV"}
                 </MenuItem>
               )}
-              {can("product", "add") && (
+              {can("product", "import") && (
                 <MenuItem onClick={() => navigate("/product/import")}>
                   Import CSV
                 </MenuItem>
@@ -291,6 +478,11 @@ export default function Product() {
               {can("product", "view") && (
                 <MenuItem onClick={() => navigate("/product/bulk-prices")}>
                   Bulk prices
+                </MenuItem>
+              )}
+              {can("product", "view") && (
+                <MenuItem onClick={() => navigate("/product/bulk-inventory")}>
+                  Bulk inventory
                 </MenuItem>
               )}
               <MenuItem onClick={() => reload()} disabled={loading}>
@@ -314,45 +506,77 @@ export default function Product() {
         {showFilters && (
           <div className="grid grid-cols-2 gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-white/[0.02] sm:flex sm:flex-wrap sm:items-center">
             {showCompanyFilter && (
-              <select
-                value={filterCompanyId}
-                onChange={(e) => setFilterCompanyId(e.target.value)}
-                aria-label="Filter by company"
-                className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 text-sm text-gray-800 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 sm:w-auto"
-              >
-                <option value="">All companies</option>
-                {companies.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              <MultiSelect
+                label="Companies"
+                className="w-full sm:w-auto"
+                selected={filterCompanyIds}
+                onChange={setFilterCompanyIds}
+                options={companies.map((c) => ({ value: c.id, label: c.name }))}
+              />
             )}
-            <select
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-              aria-label="Filter by category"
-              className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 text-sm text-gray-800 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 sm:w-auto"
-            >
-              <option value="">All categories</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as StatusFilter)}
-              aria-label="Filter by status"
-              className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 text-sm text-gray-800 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 sm:w-auto"
-            >
-              <option value="all">All status</option>
-              <option value="published">Published</option>
-              <option value="draft">Draft</option>
-              <option value="pending">Pending approval</option>
-              <option value="rejected">Rejected</option>
-            </select>
+            <MultiSelect
+              label="Categories"
+              className="w-full sm:w-auto"
+              selected={categoryIds}
+              onChange={setCategoryIds}
+              options={categories.map((c) => ({ value: c.id, label: c.name }))}
+            />
+            <MultiSelect
+              label="Status"
+              className="w-full sm:w-auto"
+              selected={statuses}
+              onChange={(next) => setStatuses(next as ProductStatus[])}
+              options={STATUS_OPTIONS}
+            />
+
+            {/* Date range: pick which date it applies to, then From–To. */}
+            <div className="col-span-2 flex flex-wrap items-center gap-2 sm:col-auto">
+              <select
+                value={dateField}
+                onChange={(e) =>
+                  setDateField(e.target.value as "created" | "updated")
+                }
+                aria-label="Date field to filter"
+                className="h-11 rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+              >
+                <option value="created">Created</option>
+                <option value="updated">Updated</option>
+              </select>
+              <input
+                type="date"
+                value={dateFrom}
+                max={dateTo || undefined}
+                onChange={(e) => setDateFrom(e.target.value)}
+                aria-label="From date"
+                className="h-11 rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:[color-scheme:dark]"
+              />
+              <span className="text-sm text-gray-400">–</span>
+              <input
+                type="date"
+                value={dateTo}
+                min={dateFrom || undefined}
+                onChange={(e) => setDateTo(e.target.value)}
+                aria-label="To date"
+                className="h-11 rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:[color-scheme:dark]"
+              />
+              <div className="inline-flex h-11 overflow-hidden rounded-lg border border-gray-300 dark:border-gray-700">
+                <button
+                  type="button"
+                  onClick={() => setDatePreset(7)}
+                  className="px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+                >
+                  7d
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDatePreset(30)}
+                  className="border-l border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+                >
+                  30d
+                </button>
+              </div>
+            </div>
+
             {activeFilterCount > 0 && (
               <button
                 type="button"
@@ -365,32 +589,47 @@ export default function Product() {
           </div>
         )}
 
-        {/* Result count — reflects the active search/filters. */}
+        {/* Result count + page-size selector. */}
         {!loading && !error && (
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            {(() => {
-              const filtering = !!query || activeFilterCount > 0;
-              if (!filtering)
-                return `${products.length} product${
-                  products.length === 1 ? "" : "s"
-                }`;
-              return `Showing ${visible.length} of ${products.length} product${
-                products.length === 1 ? "" : "s"
-              }`;
-            })()}
-            {(query || activeFilterCount > 0) && (
-              <button
-                type="button"
-                onClick={() => {
-                  setQuery("");
-                  clearFilters();
-                }}
-                className="ml-2 font-medium text-brand-500 hover:text-brand-600"
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {visible.length === 0
+                ? "No products"
+                : `Showing ${rangeStart}–${rangeEnd} of ${visible.length}` +
+                  (query || activeFilterCount > 0
+                    ? ` (filtered from ${products.length})`
+                    : "")}
+              {(query || activeFilterCount > 0) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuery("");
+                    clearFilters();
+                  }}
+                  className="ml-2 font-medium text-brand-500 hover:text-brand-600"
+                >
+                  Clear
+                </button>
+              )}
+            </p>
+
+            <label className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+              Show
+              <select
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                aria-label="Products per page"
+                className="h-9 rounded-lg border border-gray-300 bg-transparent px-2 text-sm text-gray-800 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
               >
-                Clear
-              </button>
-            )}
-          </p>
+                {PAGE_SIZES.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+              per page
+            </label>
+          </div>
         )}
 
         {loading ? (
@@ -407,19 +646,69 @@ export default function Product() {
             <p className="text-sm text-error-600 dark:text-error-400">{error}</p>
           </div>
         ) : visible.length === 0 ? (
-          <div className={`${shell} text-center`}>
-            <h4 className="mb-1 font-medium text-gray-800 dark:text-white/90">
-              No products found
-            </h4>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              {products.length === 0
-                ? "The catalogue is empty, or nothing is visible to your account."
-                : "No product matches the current search or filter."}
-            </p>
+          <div className={`${shell} flex flex-col items-center justify-center gap-3 py-12 text-center`}>
+            {products.length === 0 ? (
+              // The catalogue (for this account) is truly empty.
+              <>
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-50 text-brand-500 dark:bg-brand-500/15">
+                  <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 7l9-4 9 4-9 4-9-4z" />
+                    <path d="M3 7v10l9 4 9-4V7" />
+                    <path d="M12 11v10" />
+                  </svg>
+                </div>
+                <h4 className="font-medium text-gray-800 dark:text-white/90">
+                  No products yet
+                </h4>
+                <p className="max-w-sm text-sm text-gray-500 dark:text-gray-400">
+                  {can("product", "add")
+                    ? "Get your catalogue started by adding your first product."
+                    : "Nothing here yet, or nothing is visible to your account."}
+                </p>
+                {can("product", "add") && (
+                  <Link
+                    to="/product/new"
+                    className="mt-1 inline-flex h-11 items-center justify-center rounded-lg bg-brand-500 px-5 text-sm font-medium text-white hover:bg-brand-600"
+                  >
+                    + Add your first product
+                  </Link>
+                )}
+              </>
+            ) : (
+              // Filters/search matched nothing.
+              <>
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-400 dark:bg-white/[0.06]">
+                  <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="m21 21-4.3-4.3" />
+                  </svg>
+                </div>
+                <h4 className="font-medium text-gray-800 dark:text-white/90">
+                  No matches
+                </h4>
+                <p className="max-w-sm text-sm text-gray-500 dark:text-gray-400">
+                  No product matches your current search and filters.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuery("");
+                    clearFilters();
+                  }}
+                  className="mt-1 inline-flex h-11 items-center justify-center rounded-lg border border-gray-300 px-5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+                >
+                  Clear filters
+                </button>
+              </>
+            )}
           </div>
         ) : (
           <ProductTable
-            products={visible}
+            products={paged}
+            checkedIds={checkedIds}
+            onToggleCheck={toggleCheck}
+            onToggleCheckAll={toggleCheckAll}
+            allChecked={allPageChecked}
             canEdit={
               can("product", "edit") ||
               can("product", "stock") ||
@@ -447,7 +736,86 @@ export default function Product() {
             }}
           />
         )}
+
+        {!loading && !error && pageCount > 1 && (
+          <Pager page={safePage} pageCount={pageCount} onPage={setPage} />
+        )}
       </div>
+
+      {/* Bulk action bar — shown when rows are selected. Fixed to the bottom. */}
+      {checkedCount > 0 && (
+        <div className="fixed inset-x-0 bottom-0 z-[99990] border-t border-gray-200 bg-white px-4 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] dark:border-gray-800 dark:bg-gray-900">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-2">
+            <span className="mr-auto text-sm font-medium text-gray-700 dark:text-gray-300">
+              {checkedCount} selected
+            </span>
+
+            {can("product", "edit") && (
+              <>
+                <button
+                  type="button"
+                  disabled={bulkBusy || publishableCount === 0}
+                  onClick={bulkPublish}
+                  className="inline-flex h-10 items-center rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+                >
+                  Publish
+                </button>
+                <button
+                  type="button"
+                  disabled={bulkBusy || unpublishableCount === 0}
+                  onClick={bulkUnpublish}
+                  className="inline-flex h-10 items-center rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+                >
+                  Unpublish
+                </button>
+              </>
+            )}
+
+            {can("product", "feature") && (
+              <>
+                <button
+                  type="button"
+                  disabled={bulkBusy || toFeatureCount === 0}
+                  onClick={() => bulkFeature(true)}
+                  className="inline-flex h-10 items-center rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+                >
+                  Feature
+                </button>
+                <button
+                  type="button"
+                  disabled={bulkBusy || toUnfeatureCount === 0}
+                  onClick={() => bulkFeature(false)}
+                  className="inline-flex h-10 items-center rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+                >
+                  Unfeature
+                </button>
+              </>
+            )}
+
+            {can("product", "delete") && (
+              <button
+                type="button"
+                disabled={bulkBusy}
+                onClick={bulkDelete}
+                className="inline-flex h-10 items-center rounded-lg border border-error-300 px-3 text-sm font-medium text-error-600 hover:bg-error-50 disabled:opacity-50 dark:border-error-500/40 dark:text-error-400 dark:hover:bg-error-500/10"
+              >
+                Delete
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={clearChecks}
+              aria-label="Clear selection"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-white/[0.06]"
+            >
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Action popover for the selected row — floats just ABOVE the row and
           holds all actions, each gated by permission. */}

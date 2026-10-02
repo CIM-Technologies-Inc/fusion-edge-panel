@@ -56,6 +56,12 @@ type Props = {
   onRowClick?: (product: Product, rect: DOMRect) => void;
   /** The currently selected product id, highlighted in the table. */
   selectedId?: string | null;
+  /** Bulk selection: when provided, a checkbox column is shown. */
+  checkedIds?: Set<string>;
+  onToggleCheck?: (id: string) => void;
+  onToggleCheckAll?: () => void;
+  /** True when every product on this page is checked. */
+  allChecked?: boolean;
 };
 
 const editIconBtn =
@@ -103,8 +109,13 @@ export default function ProductTable({
   onSort,
   onRowClick,
   selectedId,
+  checkedIds,
+  onToggleCheck,
+  onToggleCheckAll,
+  allChecked,
 }: Props) {
   const showActions = !!canEdit || !!onDuplicate || !!onDelete || !!onActivity;
+  const showCheck = !!checkedIds && !!onToggleCheck;
 
   // A sortable header cell. Falls back to a plain label when onSort is absent.
   const SortableTh = ({
@@ -149,6 +160,20 @@ export default function ProductTable({
         <Table>
           <TableHeader className="border-b border-gray-100 dark:border-gray-800">
             <TableRow>
+              {showCheck && (
+                <TableCell
+                  isHeader
+                  className="px-5 py-3 text-start"
+                >
+                  <input
+                    type="checkbox"
+                    aria-label="Select all on this page"
+                    checked={!!allChecked}
+                    onChange={() => onToggleCheckAll?.()}
+                    className="h-4 w-4 rounded accent-brand-500"
+                  />
+                </TableCell>
+              )}
               <SortableTh label="Product" col="name" />
               {plainTh("SKU")}
               {plainTh("Category")}
@@ -182,6 +207,18 @@ export default function ProductTable({
                     : ""
                 }`}
               >
+                {showCheck && (
+                  <TableCell className="px-5 py-4 text-start">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${product.name}`}
+                      checked={checkedIds!.has(product.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={() => onToggleCheck!(product.id)}
+                      className="h-4 w-4 rounded accent-brand-500"
+                    />
+                  </TableCell>
+                )}
                 <TableCell className="px-5 py-4 text-start">
                   <Link
                     to={`/product/${product.slug}`}
@@ -203,9 +240,6 @@ export default function ProductTable({
                           </svg>
                         )}
                         {product.name}
-                      </span>
-                      <span className="block text-gray-500 text-theme-xs dark:text-gray-400">
-                        {product.slug}
                       </span>
                     </div>
                   </Link>
