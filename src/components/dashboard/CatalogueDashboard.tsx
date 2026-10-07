@@ -15,7 +15,10 @@ import type { Product } from "../../types/catalogue";
 const card =
   "rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]";
 
-/** A single headline number with an icon. */
+/**
+ * A compact stat card: icon on the left, label + value + sub on the right.
+ * Neutral styling, short height.
+ */
 function StatCard({
   icon,
   label,
@@ -28,22 +31,33 @@ function StatCard({
   sub?: string;
 }) {
   return (
-    <div className={card}>
-      <div className="flex items-center justify-center w-11 h-11 rounded-xl bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+    <div className={`${card} flex items-center gap-4`}>
+      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gray-100 text-gray-600 dark:bg-white/[0.06] dark:text-gray-300">
         {icon}
       </div>
-      <div className="mt-4">
-        <span className="text-theme-sm text-gray-500 dark:text-gray-400">
+      <div className="min-w-0">
+        <span className="text-theme-xs text-gray-500 dark:text-gray-400">
           {label}
         </span>
-        <h4 className="mt-1 text-2xl font-bold text-gray-800 dark:text-white/90">
+        <h4 className="text-xl font-bold leading-tight text-gray-800 dark:text-white/90">
           {value}
         </h4>
         {sub && (
-          <span className="text-theme-xs text-gray-400">{sub}</span>
+          <span className="block truncate text-theme-xs text-gray-400">
+            {sub}
+          </span>
         )}
       </div>
     </div>
+  );
+}
+
+/** A filled star, for the Featured card. */
+function StarIcon({ className = "w-5 h-5" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M12 2.5l2.9 5.88 6.49.94-4.7 4.58 1.11 6.46L12 17.77l-5.8 3.05 1.11-6.46-4.7-4.58 6.49-.94L12 2.5z" />
+    </svg>
   );
 }
 
@@ -290,7 +304,7 @@ export default function CatalogueDashboard() {
               sub={`${derived.outOfStock} out of stock`}
             />
             <StatCard
-              icon={<GroupIcon className="w-5 h-5" />}
+              icon={<StarIcon />}
               label="Featured"
               value={derived.featured}
               sub="of your products"
