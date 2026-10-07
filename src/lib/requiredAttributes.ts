@@ -5,8 +5,11 @@ export type RequiredAttribute = {
   name: string;
   /** Human-readable label shown on the form. */
   label: string;
-  /** Input kind for the form field. "rfa" picks a .rfa file from media. */
-  type: "text" | "number" | "url" | "color" | "image" | "rfa";
+  /**
+   * Input kind for the form field. "rfa" picks a .rfa file from media;
+   * "boolean" is a Yes/No toggle storing "yes"/"no".
+   */
+  type: "text" | "number" | "url" | "color" | "image" | "rfa" | "boolean";
   required: boolean;
   /** Value to pre-fill the field with when empty. Optional. */
   default?: string;

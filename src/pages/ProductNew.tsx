@@ -912,6 +912,24 @@ export default function ProductNew() {
                           </>
                         )}
                       </div>
+                    ) : ra.type === "boolean" ? (
+                      <div className="flex gap-2">
+                        {["yes", "no"].map((opt) => (
+                          <button
+                            key={opt}
+                            type="button"
+                            disabled={ra.disabled}
+                            onClick={() => setVal(opt)}
+                            className={`h-11 flex-1 rounded-lg border text-sm font-medium capitalize disabled:opacity-60 ${
+                              (val || ra.default) === opt
+                                ? "border-brand-500 bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400"
+                                : "border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+                            }`}
+                          >
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
                     ) : (
                       <Input
                         type={ra.type === "number" ? "number" : "text"}
