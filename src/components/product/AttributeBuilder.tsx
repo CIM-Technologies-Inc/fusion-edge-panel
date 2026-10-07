@@ -85,9 +85,15 @@ export default function AttributeBuilder({
   onEditPendingTerm,
 }: Props) {
   const [picker, setPicker] = useState("");
+  // Separate "add existing" picker for the Options section.
+  const [optionPicker, setOptionPicker] = useState("");
   const [newAttrName, setNewAttrName] = useState("");
   const [newAttrType, setNewAttrType] = useState<DisplayType>("select");
-  const [showNewAttr, setShowNewAttr] = useState(false);
+  // The new-attribute form is open for a section: null = closed, "spec" or
+  // "option" = which section it will add the new attribute to.
+  const [showNewAttr, setShowNewAttr] = useState<null | "spec" | "option">(
+    null
+  );
   // Per-attribute "add a value" inputs, keyed by attribute id.
   const [termDraft, setTermDraft] = useState<Record<string, string>>({});
   // Per-attribute swatch hex, only used for color-type attributes.
@@ -162,13 +168,18 @@ export default function AttributeBuilder({
     /^data-/i.test(a.slug ?? "") || /^data-/i.test(a.name ?? "");
   const available = pool.filter((a) => !used.has(a.id) && !isConfigAttr(a));
 
-  const addAssignment = (attributeId: string) => {
+  const addAssignment = (attributeId: string, forVariations = false) => {
     if (!attributeId || used.has(attributeId)) return;
     onChange([
       ...value,
-      { attribute_id: attributeId, used_for_variations: false, term_ids: [] },
+      {
+        attribute_id: attributeId,
+        used_for_variations: forVariations,
+        term_ids: [],
+      },
     ]);
     setPicker("");
+    setOptionPicker("");
   };
 
   const removeAssignment = (attributeId: string) =>
@@ -206,8 +217,9 @@ export default function AttributeBuilder({
 
   const handleCreateAttribute = async () => {
     if (!newAttrName.trim()) return;
-    // Simple products don't expose the Display selector — force plain text.
-    const type: DisplayType = isVariable ? newAttrType : "select";
+    const forVariations = showNewAttr === "option";
+    // Specs don't need a Display type; options use the chosen one.
+    const type: DisplayType = forVariations ? newAttrType : "select";
     const { data, error } = await createAttribute(newAttrName, type);
     if (error || !data) {
       notify("error", "Could not create attribute", error ?? "Failed.");
@@ -215,9 +227,9 @@ export default function AttributeBuilder({
     }
     notify("success", "Attribute created", `${data.name} added to the pool.`);
     setNewAttrName("");
-    setShowNewAttr(false);
+    setShowNewAttr(null);
     onPoolChange();
-    addAssignment(data.id);
+    addAssignment(data.id, forVariations);
   };
 
   const handleCreateTerm = async (attr: AttributeWithTerms) => {
@@ -278,75 +290,13 @@ export default function AttributeBuilder({
     toggleTerm(attr.id, data.id);
   };
 
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <Label>Attributes</Label>
-        <button
-          type="button"
-          onClick={() => setShowNewAttr((s) => !s)}
-          className="text-sm font-medium text-brand-500 hover:text-brand-600"
-        >
-          {showNewAttr ? "Cancel" : "+ New attribute"}
-        </button>
-      </div>
-      {!isVariable && (
-        <p className="text-theme-xs text-gray-400">
-          Attributes on a simple product are shown as specs (e.g. Material,
-          Warranty) and take a single value each. Switch to a variable product
-          to allow several values and turn them into buyable options.
-        </p>
-      )}
-
-      {showNewAttr && (
-        <div className="flex flex-wrap items-end gap-2 p-3 border border-gray-200 rounded-lg dark:border-gray-700">
-          <div className="flex-1 min-w-40">
-            <Label>Name</Label>
-            <Input
-              value={newAttrName}
-              placeholder="e.g. Color"
-              onChange={(e) => setNewAttrName(e.target.value)}
-            />
-          </div>
-          {/* "Display" controls how buyers PICK a variation option, so it only
-              applies to variable products. On a simple product an attribute is
-              plain spec text — the selector would just be confusing. */}
-          {isVariable && (
-            <div>
-              <Label>Display</Label>
-              <select
-                value={newAttrType}
-                onChange={(e) => setNewAttrType(e.target.value as DisplayType)}
-                className="h-11 rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
-              >
-                <option value="select">Dropdown</option>
-                <option value="button">Button</option>
-                <option value="color">Color swatch</option>
-                <option value="image">Image</option>
-              </select>
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={handleCreateAttribute}
-            className="h-11 rounded-lg bg-brand-500 px-4 text-sm font-medium text-white hover:bg-brand-600"
-          >
-            Create
-          </button>
-        </div>
-      )}
-
-      {/* Assigned attributes */}
-      {value.length === 0 && (
-        <p className="text-sm text-gray-500 dark:text-gray-400">
-          No attributes yet. Add one below to describe this product.
-        </p>
-      )}
-
-      {value.map((assignment) => {
-        const attr = pool.find((a) => a.id === assignment.attribute_id);
-        if (!attr) return null;
-        return (
+  // One attribute card (chips, value add, default picker). The section it sits
+  // in (Options vs Specifications) decides used_for_variations, so there's no
+  // in-card checkbox for it.
+  const renderCard = (assignment: AttributeAssignment) => {
+    const attr = pool.find((a) => a.id === assignment.attribute_id);
+    if (!attr) return null;
+    return (
           <div
             key={attr.id}
             className="p-4 border border-gray-200 rounded-lg dark:border-gray-700"
@@ -505,29 +455,6 @@ export default function AttributeBuilder({
               values on the Attributes page.
             </p>
 
-            {isVariable && (
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={assignment.used_for_variations}
-                  onChange={(e) =>
-                    patch(attr.id, {
-                      used_for_variations: e.target.checked,
-                      // A spec has no picker, so it can't carry a default.
-                      ...(e.target.checked ? {} : { default_term_id: null }),
-                    })
-                  }
-                  className="w-4 h-4 rounded accent-brand-500"
-                />
-                <span className="text-sm text-gray-600 dark:text-gray-300">
-                  Used for variations
-                </span>
-                <span className="text-theme-xs text-gray-400">
-                  (off = shown as a spec only)
-                </span>
-              </label>
-            )}
-
             {/* Which value the product page opens with. */}
             {isVariable && assignment.used_for_variations && (
               <div className="flex flex-wrap items-center gap-2 mt-3">
@@ -557,34 +484,163 @@ export default function AttributeBuilder({
               </div>
             )}
           </div>
-        );
-      })}
+    );
+  };
 
-      {/* Add an existing global attribute */}
-      {available.length > 0 && (
-        <div className="flex gap-2">
+  // The new-attribute inline form, shared by both sections.
+  const newAttrForm = (
+    <div className="flex flex-wrap items-end gap-2 p-3 border border-gray-200 rounded-lg dark:border-gray-700">
+      <div className="flex-1 min-w-40">
+        <Label>Name</Label>
+        <Input
+          value={newAttrName}
+          placeholder="e.g. Color"
+          onChange={(e) => setNewAttrName(e.target.value)}
+        />
+      </div>
+      {/* "Display" controls how buyers PICK an option — only for options. */}
+      {showNewAttr === "option" && (
+        <div>
+          <Label>Display</Label>
           <select
-            value={picker}
-            onChange={(e) => setPicker(e.target.value)}
-            className="h-11 flex-1 rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+            value={newAttrType}
+            onChange={(e) => setNewAttrType(e.target.value as DisplayType)}
+            className="h-11 rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
           >
-            <option value="">Add existing attribute…</option>
-            {available.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
+            <option value="select">Dropdown</option>
+            <option value="button">Button</option>
+            <option value="color">Color swatch</option>
+            <option value="image">Image</option>
           </select>
-          <button
-            type="button"
-            onClick={() => addAssignment(picker)}
-            disabled={!picker}
-            className="h-11 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
-          >
-            Add
-          </button>
         </div>
       )}
+      <button
+        type="button"
+        onClick={handleCreateAttribute}
+        className="h-11 rounded-lg bg-brand-500 px-4 text-sm font-medium text-white hover:bg-brand-600"
+      >
+        Create
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setShowNewAttr(null);
+          setNewAttrName("");
+        }}
+        className="h-11 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+      >
+        Cancel
+      </button>
+    </div>
+  );
+
+  // "Add existing attribute" picker for a section.
+  const existingPicker = (
+    forVariations: boolean,
+    pickVal: string,
+    setPickVal: (v: string) => void
+  ) =>
+    available.length > 0 ? (
+      <div className="flex gap-2">
+        <select
+          value={pickVal}
+          onChange={(e) => setPickVal(e.target.value)}
+          className="h-11 flex-1 rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+        >
+          <option value="">Add existing…</option>
+          {available.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => addAssignment(pickVal, forVariations)}
+          disabled={!pickVal}
+          className="h-11 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+        >
+          Add
+        </button>
+      </div>
+    ) : null;
+
+  const optionAssignments = value.filter((a) => a.used_for_variations);
+  const specAssignments = value.filter((a) => !a.used_for_variations);
+
+  return (
+    <div className="space-y-6">
+      {/* OPTIONS — only variable products have buyable options/variations. */}
+      {isVariable && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <Label>Options</Label>
+              <p className="text-theme-xs text-gray-400">
+                Buyable choices (e.g. Color, Size) that create variations.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setShowNewAttr((s) => (s === "option" ? null : "option"))
+              }
+              className="text-sm font-medium text-brand-500 hover:text-brand-600"
+            >
+              + New option
+            </button>
+          </div>
+
+          {showNewAttr === "option" && newAttrForm}
+
+          {optionAssignments.length === 0 ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              No options yet. Add one to build variations.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {optionAssignments.map((a) => renderCard(a))}
+            </div>
+          )}
+
+          {existingPicker(true, optionPicker, setOptionPicker)}
+        </section>
+      )}
+
+      {/* SPECIFICATIONS — display-only attributes. */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <Label>Specifications</Label>
+            <p className="text-theme-xs text-gray-400">
+              Display-only details (e.g. Material, Warranty). Not buyable.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() =>
+              setShowNewAttr((s) => (s === "spec" ? null : "spec"))
+            }
+            className="text-sm font-medium text-brand-500 hover:text-brand-600"
+          >
+            + New specification
+          </button>
+        </div>
+
+        {showNewAttr === "spec" && newAttrForm}
+
+        {specAssignments.length === 0 ? (
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            No specifications yet.
+          </p>
+        ) : (
+          <div className="space-y-4">
+            {specAssignments.map((a) => renderCard(a))}
+          </div>
+        )}
+
+        {existingPicker(false, picker, setPicker)}
+      </section>
 
       <MediaPicker
         isOpen={pickerAttr !== null}
