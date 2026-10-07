@@ -8,7 +8,8 @@ const buildSelect = (withSupplier: boolean, withApproval: boolean) => `
   in_stock, featured, published, ${withApproval ? "approval_status," : ""} created_at, updated_at,
   ${withSupplier ? "supplier_id, company_id," : "company_id,"}
   category:categories ( id, name, slug ),
-  images:product_images ( id, url, alt, position, variation_id )
+  images:product_images ( id, url, alt, position, variation_id ),
+  product_attributes ( attribute_id, product_attribute_terms ( term_id ) )
 `;
 
 export function useProducts() {
@@ -74,11 +75,24 @@ export function useProducts() {
       setError(errMsg);
       setProducts([]);
     } else {
-      // Position 0 is the main image; the rest are thumbnails.
+      // Position 0 is the main image; the rest are thumbnails. Flatten the
+      // product's attribute terms to { attribute_id, term_id } pairs for the
+      // list's attribute filters.
       const rows = (data ?? []).map((p) => ({
         ...p,
         images: [...(p.images ?? [])].sort(
           (a: ProductImage, b: ProductImage) => a.position - b.position
+        ),
+        attributeTerms: (p.product_attributes ?? []).flatMap(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (pa: any) =>
+            (pa.product_attribute_terms ?? []).map(
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (pat: any) => ({
+                attribute_id: pa.attribute_id,
+                term_id: pat.term_id,
+              })
+            )
         ),
       })) as unknown as Product[];
       setProducts(rows);

@@ -29,7 +29,7 @@ export function useAttributes(productId?: string) {
       .from("attributes")
       .select(
         `
-        id, name, slug, display_type, position,
+        id, name, slug, display_type, position, filterable,
         terms:attribute_terms ( id, name, slug, swatch, position, product_id )
       `
       )

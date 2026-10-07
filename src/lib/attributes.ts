@@ -61,11 +61,18 @@ export async function deleteTerm(
 export async function updateAttribute(
   attributeId: string,
   name: string,
-  display_type: DisplayType
+  display_type: DisplayType,
+  filterable?: boolean
 ): Promise<{ error: string | null }> {
+  const patch: {
+    name: string;
+    display_type: DisplayType;
+    filterable?: boolean;
+  } = { name: name.trim(), display_type };
+  if (filterable !== undefined) patch.filterable = filterable;
   const { error } = await supabase
     .from("attributes")
-    .update({ name: name.trim(), display_type })
+    .update(patch)
     .eq("id", attributeId);
   return { error: error?.message ?? null };
 }
@@ -86,12 +93,13 @@ export async function updateTerm(
 /** Create a new global attribute (Color, Material…). Returns the created row. */
 export async function createAttribute(
   name: string,
-  display_type: DisplayType
+  display_type: DisplayType,
+  filterable = false
 ): Promise<{ data: AttributeWithTerms | null; error: string | null }> {
   const { data, error } = await supabase
     .from("attributes")
-    .insert({ name: name.trim(), slug: slugify(name), display_type })
-    .select("id, name, slug, display_type, position")
+    .insert({ name: name.trim(), slug: slugify(name), display_type, filterable })
+    .select("id, name, slug, display_type, position, filterable")
     .single();
 
   if (error || !data) return { data: null, error: error?.message ?? "Failed." };

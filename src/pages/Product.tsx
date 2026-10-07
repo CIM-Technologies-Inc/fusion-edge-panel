@@ -6,6 +6,7 @@ import ProductTable from "../components/product/ProductTable";
 import ActivityDrawer from "../components/common/ActivityDrawer";
 import RowMenu, { MenuItem } from "../components/common/RowMenu";
 import { useProducts } from "../hooks/useProducts";
+import { useAttributes } from "../hooks/useAttributes";
 import { useCategories } from "../hooks/useCategories";
 import { useCompaniesFull } from "../hooks/useCompaniesFull";
 import { useAuth } from "../context/AuthContext";
@@ -51,6 +52,9 @@ const shell =
 export default function Product() {
   const { products: allProducts, loading, error, reload } = useProducts();
   const { categories } = useCategories();
+  const { attributes } = useAttributes();
+  // Attributes flagged as storefront filters — also offered as list filters.
+  const filterAttrs = attributes.filter((a) => a.filterable);
   const { isAdmin, can, companyId } = useAuth();
   // The company filter is only useful to users NOT tied to a company (they see
   // every company's products); company-users are already scoped to their own.
@@ -88,6 +92,8 @@ export default function Product() {
   const [userSorted, setUserSorted] = useState(false);
   const [categoryIds, setCategoryIds] = useState<string[]>([]);
   const [filterCompanyIds, setFilterCompanyIds] = useState<string[]>([]);
+  // Selected term ids per filterable attribute: { attributeId: termId[] }.
+  const [attrFilters, setAttrFilters] = useState<Record<string, string[]>>({});
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   // Bulk selection (by product id) and the in-flight bulk action, if any.
@@ -207,6 +213,16 @@ export default function Product() {
         if (fromMs !== null && t < fromMs) return false;
         if (toMs !== null && t > toMs) return false;
       }
+      // Attribute filters: for each selected attribute the product must carry
+      // at least one of its selected terms (AND across attributes, OR within).
+      for (const [attrId, termIds] of Object.entries(attrFilters)) {
+        if (termIds.length === 0) continue;
+        const pairs = p.attributeTerms ?? [];
+        const has = pairs.some(
+          (x) => x.attribute_id === attrId && termIds.includes(x.term_id)
+        );
+        if (!has) return false;
+      }
       if (!q) return true;
       return (
         p.name.toLowerCase().includes(q) ||
@@ -237,17 +253,22 @@ export default function Product() {
     dateField,
     dateFrom,
     dateTo,
+    attrFilters,
     sortKey,
     sortDir,
     userSorted,
   ]);
 
   // How many filters are active (search excluded — it has its own field).
+  const activeAttrCount = Object.values(attrFilters).filter(
+    (v) => v.length > 0
+  ).length;
   const activeFilterCount =
     (categoryIds.length > 0 ? 1 : 0) +
     (filterCompanyIds.length > 0 ? 1 : 0) +
     (statuses.length > 0 ? 1 : 0) +
-    (dateFrom || dateTo ? 1 : 0);
+    (dateFrom || dateTo ? 1 : 0) +
+    activeAttrCount;
 
   // Pagination over the filtered/sorted list.
   const pageCount = Math.max(1, Math.ceil(visible.length / pageSize));
@@ -263,6 +284,7 @@ export default function Product() {
     dateField,
     dateFrom,
     dateTo,
+    attrFilters,
     sortKey,
     sortDir,
     pageSize,
@@ -385,6 +407,7 @@ export default function Product() {
     setStatuses([]);
     setDateFrom("");
     setDateTo("");
+    setAttrFilters({});
     setShowFilters(false);
   };
 
@@ -528,6 +551,23 @@ export default function Product() {
               onChange={(next) => setStatuses(next as ProductStatus[])}
               options={STATUS_OPTIONS}
             />
+
+            {/* Filterable attributes (one dropdown each). */}
+            {filterAttrs.map((attr) => (
+              <MultiSelect
+                key={attr.id}
+                label={attr.name}
+                className="w-full sm:w-auto"
+                selected={attrFilters[attr.id] ?? []}
+                onChange={(next) =>
+                  setAttrFilters((prev) => ({ ...prev, [attr.id]: next }))
+                }
+                options={attr.terms.map((t) => ({
+                  value: t.id,
+                  label: t.name,
+                }))}
+              />
+            ))}
 
             {/* Date range: pick which date it applies to, then From–To. */}
             <div className="col-span-2 flex flex-wrap items-center gap-2 sm:col-auto">

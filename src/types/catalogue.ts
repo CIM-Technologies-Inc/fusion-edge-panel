@@ -85,6 +85,8 @@ export type Attribute = {
   slug: string;
   display_type: DisplayType;
   position: number;
+  /** When true, the storefront may offer this attribute as a filter (facet). */
+  filterable?: boolean;
 };
 
 /** A global attribute with its full term pool — the reusable definition. */
@@ -158,6 +160,8 @@ export type Product = {
   brand: Brand | null;
   company: Company | null;
   images: ProductImage[];
+  /** Flattened attribute assignments for list filtering (optional). */
+  attributeTerms?: { attribute_id: string; term_id: string }[];
 };
 
 export type ProductDetail = Product & {

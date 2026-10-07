@@ -37,6 +37,7 @@ export default function Attributes() {
 
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState<DisplayType>("select");
+  const [newFilterable, setNewFilterable] = useState(false);
   const [creating, setCreating] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   /** Attribute being edited in the modal, or null when adding a new one. */
@@ -75,6 +76,7 @@ export default function Attributes() {
     setEditingId(null);
     setNewName("");
     setNewType("select");
+    setNewFilterable(false);
     setModalOpen(true);
   };
 
@@ -82,6 +84,7 @@ export default function Attributes() {
     setEditingId(attr.id);
     setNewName(attr.name);
     setNewType(attr.display_type);
+    setNewFilterable(!!attr.filterable);
     setModalOpen(true);
   };
 
@@ -90,8 +93,8 @@ export default function Attributes() {
     if (!newName.trim()) return;
     setCreating(true);
     const { error } = editingId
-      ? await updateAttribute(editingId, newName, newType)
-      : await createAttribute(newName, newType);
+      ? await updateAttribute(editingId, newName, newType, newFilterable)
+      : await createAttribute(newName, newType, newFilterable);
     setCreating(false);
 
     if (error) {
@@ -256,6 +259,25 @@ export default function Attributes() {
               </select>
             </div>
           </div>
+
+          {/* Storefront filter flag. */}
+          <label className="mt-5 flex cursor-pointer items-start gap-3">
+            <input
+              type="checkbox"
+              checked={newFilterable}
+              onChange={(e) => setNewFilterable(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded accent-brand-500"
+            />
+            <span>
+              <span className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Use as storefront filter
+              </span>
+              <span className="block text-theme-xs text-gray-400">
+                Shoppers can filter products by this attribute on the storefront.
+              </span>
+            </span>
+          </label>
+
           <div className="flex justify-end gap-3 mt-6">
             <button
               type="button"
@@ -330,6 +352,11 @@ export default function Attributes() {
                   <Badge size="sm" color="light">
                     {TYPE_LABEL[attr.display_type]}
                   </Badge>
+                  {attr.filterable && (
+                    <Badge size="sm" color="info">
+                      Filter
+                    </Badge>
+                  )}
                   <span className="text-theme-xs text-gray-400">
                     {attr.terms.length} value
                     {attr.terms.length === 1 ? "" : "s"}
