@@ -33,7 +33,11 @@ import {
   withBrandAttribute,
   type AttributeAssignment,
 } from "../lib/attributes";
-import { getRequiredAttributes } from "../lib/requiredAttributes";
+import {
+  getRequiredAttributes,
+  getComponents,
+  hasComponents,
+} from "../lib/requiredAttributes";
 import type { AttributeWithTerms, ProductKind } from "../types/catalogue";
 
 const shell =
@@ -109,6 +113,8 @@ export default function ProductNew() {
   const [name, setName] = useState("");
   const [sku, setSku] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  // Chosen component slug for categories that offer components (Tile/Paint).
+  const [componentSlug, setComponentSlug] = useState("");
   const [companyId, setCompanyId] = useState("");
   const [brandId, setBrandId] = useState("");
   // For a company-user, force the company to their own once it's known.
@@ -129,7 +135,12 @@ export default function ProductNew() {
   // selected category's slug. Auto-shown as fields; their typed values.
   const categorySlug =
     categories.find((c) => c.id === categoryId)?.slug ?? null;
-  const requiredAttrs = getRequiredAttributes(categorySlug);
+  const components = getComponents(categorySlug);
+  const needsComponent = hasComponents(categorySlug);
+  const requiredAttrs = getRequiredAttributes(
+    categorySlug,
+    needsComponent ? componentSlug : null
+  );
   // Config attributes are managed only in the required card — keep them out of
   // the regular Attributes list so they don't appear twice. Matched by slug.
   const requiredSlugSet = new Set(requiredAttrs.map((ra) => slugify(ra.name)));
@@ -667,6 +678,7 @@ export default function ProductNew() {
                 value={categoryId}
                 onChange={(e) => {
                   setCategoryId(e.target.value);
+                  setComponentSlug(""); // reset when the category changes
                   revalidate({ categoryId: e.target.value });
                 }}
                 className={`${inputClass} dark:bg-gray-900`}
@@ -679,6 +691,26 @@ export default function ProductNew() {
                 ))}
               </select>
             </div>
+
+            {/* Component — optional sub-type for categories that define them.
+                Leaving it blank keeps the category's base fields. */}
+            {needsComponent && (
+              <div>
+                <Label>Component (optional)</Label>
+                <select
+                  value={componentSlug}
+                  onChange={(e) => setComponentSlug(e.target.value)}
+                  className={`${inputClass} dark:bg-gray-900`}
+                >
+                  <option value="">None — base {" "}fields</option>
+                  {components.map((c) => (
+                    <option key={c.slug} value={c.slug}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div className="flex justify-end pt-2">
               <button
@@ -930,6 +962,20 @@ export default function ProductNew() {
                           </button>
                         ))}
                       </div>
+                    ) : ra.type === "select" ? (
+                      <select
+                        value={val || ra.default || ""}
+                        disabled={ra.disabled}
+                        onChange={(e) => setVal(e.target.value)}
+                        className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                      >
+                        <option value="">Select…</option>
+                        {(ra.options ?? []).map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
                     ) : (
                       <Input
                         type={ra.type === "number" ? "number" : "text"}
@@ -948,8 +994,8 @@ export default function ProductNew() {
           </div>
         )}
 
-        {/* Attributes get their own card, separate from the product details. */}
-        <div data-tour="product-attributes" className={shell}>
+        {/* Attributes: Specifications + Options, each in its own card. */}
+        <div data-tour="product-attributes" className="space-y-6">
           <AttributeBuilder
             pool={builderPool}
             value={assignments}
@@ -967,7 +1013,7 @@ export default function ProductNew() {
             }
           />
           {kind === "variable" && (
-            <p className="pt-4 mt-4 text-theme-xs text-gray-400 border-t border-gray-100 dark:border-gray-800">
+            <p className="text-theme-xs text-gray-400">
               Variations are set up after the product is created — pick the
               attributes and values here, then use the Variations tab on the
               edit page.

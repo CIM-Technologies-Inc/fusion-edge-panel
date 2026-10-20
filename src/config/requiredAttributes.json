@@ -1,10 +1,18 @@
 {
-  "$comment": "Required attributes per product category. Matched by category slug (case-insensitive). Each attribute: name (slug, rendered as a data-cim-* product attribute), label, type (text|number|url|color|image|rfa), required, optional default (pre-filled value), and optional disabled:true (shown but not editable — use with default to lock a fixed value). Type 'rfa' picks a .rfa file from the media library. CIM Revit plugin keys map by stripping 'data-cim-' and converting '-' to '_' (e.g. data-cim-tile-w -> tile_w). Units follow the CIM spec: tile_w/tile_h in cm; everything else numeric in the unit named in its label. Yes/no fields use text 'yes'/'no'. Component-tag fields are locked to the exact Paint/Tile System component name the plugin validates against.",
-  "version": 2,
+  "$comment": "Required attributes per product category, matched by category slug (case-insensitive). A category may have base 'attributes' (always shown) AND 'components' (optional sub-types). When no component is chosen the base attributes show; when a component is chosen its attributes REPLACE the base. Each attribute: name (slug, rendered as a data-cim-* product attribute), label, type (text|number|url|color|image|rfa|boolean|select), required, optional options (for select), optional default, optional disabled:true (shown but not editable). The CIM Revit plugin reads the data-cim-* DOM attributes verbatim (data-cim-tile-w etc.). Units follow the CIM spec: tile_w/tile_h in cm; else numeric in the unit named in its label. Component-tag fields (data-cim-tile-component / data-cim-paint-component) are locked to the exact Tile/Paint System component name the plugin validates against.",
+  "version": 4,
   "categories": {
     "tiles": {
-      "label": "Tiles",
+      "label": "Tile",
       "attributes": [
+        {
+          "name": "data-cim-tile-component",
+          "label": "Component",
+          "type": "text",
+          "required": true,
+          "default": "Tile",
+          "disabled": true
+        },
         {
           "name": "data-cim-url",
           "label": "Tile image URL",
@@ -37,190 +45,1422 @@
           "type": "number",
           "required": false
         }
-      ]
+      ],
+      "components": {
+        "tile-adhesive": {
+          "label": "Tile Adhesive",
+          "attributes": [
+            {
+              "name": "data-cim-kind",
+              "label": "Kind",
+              "type": "text",
+              "required": true,
+              "default": "material",
+              "disabled": true
+            },
+            {
+              "name": "data-cim-tile-component",
+              "label": "Component",
+              "type": "select",
+              "required": true,
+              "default": "Tile Adhesive",
+              "options": [
+                "Surface Primer",
+                "Waterproofing",
+                "Screed / Mortar Bed",
+                "Self-Leveling",
+                "Tile Adhesive",
+                "Grout",
+                "Sealant / Silicone",
+                "Grout Sealer",
+                "Edge Trim / Profile",
+                "Tile Spacers",
+                "Backer Board",
+                "Uncoupling Membrane"
+              ]
+            },
+            {
+              "name": "data-cim-estimating-basis",
+              "label": "Estimating basis",
+              "type": "select",
+              "required": false,
+              "default": "consumption",
+              "options": [
+                "coverage",
+                "consumption",
+                "bed_volume",
+                "joint_grout",
+                "linear_sealant",
+                "linear_trim",
+                "piece_count"
+              ]
+            },
+            {
+              "name": "data-cim-url",
+              "label": "Tile Adhesive image URL",
+              "type": "image",
+              "required": false
+            },
+            {
+              "name": "data-cim-consumption",
+              "label": "Consumption (kg per m²)",
+              "type": "number",
+              "required": true,
+              "default": "4"
+            },
+            {
+              "name": "data-cim-pack-size",
+              "label": "Pack size (in pack unit)",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "data-cim-pack-unit",
+              "label": "Pack unit",
+              "type": "select",
+              "required": true,
+              "default": "kg",
+              "options": [
+                "kg",
+                "L",
+                "mL",
+                "m",
+                "board",
+                "roll",
+                "piece"
+              ]
+            }
+          ]
+        },
+        "grout": {
+          "label": "Grout",
+          "attributes": [
+            {
+              "name": "data-cim-kind",
+              "label": "Kind",
+              "type": "text",
+              "required": true,
+              "default": "material",
+              "disabled": true
+            },
+            {
+              "name": "data-cim-grout-color-name",
+              "label": "Grout Color Name",
+              "type": "text",
+              "required": false
+            },
+            {
+              "name": "data-cim-grout-color-hex",
+              "label": "Grout Color Hex",
+              "type": "color",
+              "required": true
+            },
+            {
+              "name": "data-cim-tile-component",
+              "label": "Component",
+              "type": "select",
+              "required": true,
+              "default": "Grout",
+              "options": [
+                "Surface Primer",
+                "Waterproofing",
+                "Screed / Mortar Bed",
+                "Self-Leveling",
+                "Tile Adhesive",
+                "Grout",
+                "Sealant / Silicone",
+                "Grout Sealer",
+                "Edge Trim / Profile",
+                "Tile Spacers",
+                "Backer Board",
+                "Uncoupling Membrane"
+              ]
+            },
+            {
+              "name": "data-cim-estimating-basis",
+              "label": "Estimating basis",
+              "type": "select",
+              "required": false,
+              "default": "joint_grout",
+              "options": [
+                "coverage",
+                "consumption",
+                "bed_volume",
+                "joint_grout",
+                "linear_sealant",
+                "linear_trim",
+                "piece_count"
+              ]
+            },
+            {
+              "name": "data-cim-url",
+              "label": "Grout image URL",
+              "type": "image",
+              "required": false
+            },
+            {
+              "name": "data-cim-grout-density",
+              "label": "Grout density (kg per m³)",
+              "type": "number",
+              "required": true,
+              "default": "1600"
+            },
+            {
+              "name": "data-cim-joint-width",
+              "label": "Joint width (mm)",
+              "type": "number",
+              "required": false
+            },
+            {
+              "name": "data-cim-joint-depth",
+              "label": "Joint depth (mm)",
+              "type": "number",
+              "required": false
+            },
+            {
+              "name": "data-cim-pack-size",
+              "label": "Pack size (in pack unit)",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "data-cim-pack-unit",
+              "label": "Pack unit",
+              "type": "select",
+              "required": true,
+              "default": "kg",
+              "options": [
+                "kg",
+                "L",
+                "mL",
+                "m",
+                "board",
+                "roll",
+                "piece"
+              ]
+            }
+          ]
+        },
+        "surface-primer": {
+          "label": "Surface Primer",
+          "attributes": [
+            {
+              "name": "data-cim-kind",
+              "label": "Kind",
+              "type": "text",
+              "required": true,
+              "default": "material",
+              "disabled": true
+            },
+            {
+              "name": "data-cim-tile-component",
+              "label": "Component",
+              "type": "select",
+              "required": true,
+              "default": "Surface Primer",
+              "options": [
+                "Surface Primer",
+                "Waterproofing",
+                "Screed / Mortar Bed",
+                "Self-Leveling",
+                "Tile Adhesive",
+                "Grout",
+                "Sealant / Silicone",
+                "Grout Sealer",
+                "Edge Trim / Profile",
+                "Tile Spacers",
+                "Backer Board",
+                "Uncoupling Membrane"
+              ]
+            },
+            {
+              "name": "data-cim-estimating-basis",
+              "label": "Estimating basis",
+              "type": "select",
+              "required": false,
+              "default": "coverage",
+              "options": [
+                "coverage",
+                "consumption",
+                "bed_volume",
+                "joint_grout",
+                "linear_sealant",
+                "linear_trim",
+                "piece_count"
+              ]
+            },
+            {
+              "name": "data-cim-url",
+              "label": "Surface Primer image URL",
+              "type": "image",
+              "required": false
+            },
+            {
+              "name": "data-cim-coverage",
+              "label": "Coverage (m² per pack unit)",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "data-cim-pack-size",
+              "label": "Pack size (in pack unit)",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "data-cim-pack-unit",
+              "label": "Pack unit",
+              "type": "select",
+              "required": true,
+              "default": "L",
+              "options": [
+                "kg",
+                "L",
+                "mL",
+                "m",
+                "board",
+                "roll",
+                "piece"
+              ]
+            }
+          ]
+        },
+        "waterproofing": {
+          "label": "Waterproofing",
+          "attributes": [
+            {
+              "name": "data-cim-kind",
+              "label": "Kind",
+              "type": "text",
+              "required": true,
+              "default": "material",
+              "disabled": true
+            },
+            {
+              "name": "data-cim-tile-component",
+              "label": "Component",
+              "type": "select",
+              "required": true,
+              "default": "Waterproofing",
+              "options": [
+                "Surface Primer",
+                "Waterproofing",
+                "Screed / Mortar Bed",
+                "Self-Leveling",
+                "Tile Adhesive",
+                "Grout",
+                "Sealant / Silicone",
+                "Grout Sealer",
+                "Edge Trim / Profile",
+                "Tile Spacers",
+                "Backer Board",
+                "Uncoupling Membrane"
+              ]
+            },
+            {
+              "name": "data-cim-url",
+              "label": "Waterproofing image URL",
+              "type": "image",
+              "required": false
+            },
+            {
+              "name": "data-cim-estimating-basis",
+              "label": "Estimating basis",
+              "type": "select",
+              "required": false,
+              "options": [
+                "coverage",
+                "consumption"
+              ]
+            },
+            {
+              "name": "data-cim-coverage",
+              "label": "Coverage (m² per pack unit) — liquid",
+              "type": "number",
+              "required": false
+            },
+            {
+              "name": "data-cim-consumption",
+              "label": "Consumption (per m²) — cementitious",
+              "type": "number",
+              "required": false
+            },
+            {
+              "name": "data-cim-pack-size",
+              "label": "Pack size (in pack unit)",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "data-cim-pack-unit",
+              "label": "Pack unit",
+              "type": "select",
+              "required": true,
+              "default": "L",
+              "options": [
+                "kg",
+                "L",
+                "mL",
+                "m",
+                "board",
+                "roll",
+                "piece"
+              ]
+            }
+          ]
+        },
+        "screed-mortar-bed": {
+          "label": "Screed / Mortar Bed",
+          "attributes": [
+            {
+              "name": "data-cim-kind",
+              "label": "Kind",
+              "type": "text",
+              "required": true,
+              "default": "material",
+              "disabled": true
+            },
+            {
+              "name": "data-cim-tile-component",
+              "label": "Component",
+              "type": "select",
+              "required": true,
+              "default": "Screed / Mortar Bed",
+              "options": [
+                "Surface Primer",
+                "Waterproofing",
+                "Screed / Mortar Bed",
+                "Self-Leveling",
+                "Tile Adhesive",
+                "Grout",
+                "Sealant / Silicone",
+                "Grout Sealer",
+                "Edge Trim / Profile",
+                "Tile Spacers",
+                "Backer Board",
+                "Uncoupling Membrane"
+              ]
+            },
+            {
+              "name": "data-cim-estimating-basis",
+              "label": "Estimating basis",
+              "type": "select",
+              "required": false,
+              "default": "bed_volume",
+              "options": [
+                "coverage",
+                "consumption",
+                "bed_volume",
+                "joint_grout",
+                "linear_sealant",
+                "linear_trim",
+                "piece_count"
+              ]
+            },
+            {
+              "name": "data-cim-url",
+              "label": "Screed / Mortar Bed image URL",
+              "type": "image",
+              "required": false
+            },
+            {
+              "name": "data-cim-thickness",
+              "label": "Bed thickness (mm)",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "data-cim-mix-cement",
+              "label": "Mix — cement part",
+              "type": "number",
+              "required": true,
+              "default": "1"
+            },
+            {
+              "name": "data-cim-mix-sand",
+              "label": "Mix — sand part",
+              "type": "number",
+              "required": true,
+              "default": "4"
+            },
+            {
+              "name": "data-cim-cement-bag-kg",
+              "label": "Cement bag (kg)",
+              "type": "number",
+              "required": true,
+              "default": "40"
+            },
+            {
+              "name": "data-cim-pack-size",
+              "label": "Pack size (in pack unit)",
+              "type": "number",
+              "required": false
+            },
+            {
+              "name": "data-cim-pack-unit",
+              "label": "Pack unit",
+              "type": "select",
+              "required": false,
+              "default": "kg",
+              "options": [
+                "kg",
+                "L",
+                "mL",
+                "m",
+                "board",
+                "roll",
+                "piece"
+              ]
+            }
+          ]
+        },
+        "self-leveling": {
+          "label": "Self-Leveling",
+          "attributes": [
+            {
+              "name": "data-cim-kind",
+              "label": "Kind",
+              "type": "text",
+              "required": true,
+              "default": "material",
+              "disabled": true
+            },
+            {
+              "name": "data-cim-tile-component",
+              "label": "Component",
+              "type": "select",
+              "required": true,
+              "default": "Self-Leveling",
+              "options": [
+                "Surface Primer",
+                "Waterproofing",
+                "Screed / Mortar Bed",
+                "Self-Leveling",
+                "Tile Adhesive",
+                "Grout",
+                "Sealant / Silicone",
+                "Grout Sealer",
+                "Edge Trim / Profile",
+                "Tile Spacers",
+                "Backer Board",
+                "Uncoupling Membrane"
+              ]
+            },
+            {
+              "name": "data-cim-estimating-basis",
+              "label": "Estimating basis",
+              "type": "select",
+              "required": false,
+              "default": "consumption",
+              "options": [
+                "coverage",
+                "consumption",
+                "bed_volume",
+                "joint_grout",
+                "linear_sealant",
+                "linear_trim",
+                "piece_count"
+              ]
+            },
+            {
+              "name": "data-cim-url",
+              "label": "Self-Leveling image URL",
+              "type": "image",
+              "required": false
+            },
+            {
+              "name": "data-cim-consumption",
+              "label": "Consumption (per m², per mm if set)",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "data-cim-consumption-per-mm",
+              "label": "Consumption is per mm",
+              "type": "boolean",
+              "required": true,
+              "default": "yes"
+            },
+            {
+              "name": "data-cim-thickness",
+              "label": "Thickness (mm)",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "data-cim-pack-size",
+              "label": "Pack size (in pack unit)",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "data-cim-pack-unit",
+              "label": "Pack unit",
+              "type": "select",
+              "required": true,
+              "default": "kg",
+              "options": [
+                "kg",
+                "L",
+                "mL",
+                "m",
+                "board",
+                "roll",
+                "piece"
+              ]
+            }
+          ]
+        },
+        "grout-sealer": {
+          "label": "Grout Sealer",
+          "attributes": [
+            {
+              "name": "data-cim-kind",
+              "label": "Kind",
+              "type": "text",
+              "required": true,
+              "default": "material",
+              "disabled": true
+            },
+            {
+              "name": "data-cim-tile-component",
+              "label": "Component",
+              "type": "select",
+              "required": true,
+              "default": "Grout Sealer",
+              "options": [
+                "Surface Primer",
+                "Waterproofing",
+                "Screed / Mortar Bed",
+                "Self-Leveling",
+                "Tile Adhesive",
+                "Grout",
+                "Sealant / Silicone",
+                "Grout Sealer",
+                "Edge Trim / Profile",
+                "Tile Spacers",
+                "Backer Board",
+                "Uncoupling Membrane"
+              ]
+            },
+            {
+              "name": "data-cim-estimating-basis",
+              "label": "Estimating basis",
+              "type": "select",
+              "required": false,
+              "default": "coverage",
+              "options": [
+                "coverage",
+                "consumption",
+                "bed_volume",
+                "joint_grout",
+                "linear_sealant",
+                "linear_trim",
+                "piece_count"
+              ]
+            },
+            {
+              "name": "data-cim-url",
+              "label": "Grout Sealer image URL",
+              "type": "image",
+              "required": false
+            },
+            {
+              "name": "data-cim-coverage",
+              "label": "Coverage (m² per pack unit)",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "data-cim-pack-size",
+              "label": "Pack size (in pack unit)",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "data-cim-pack-unit",
+              "label": "Pack unit",
+              "type": "select",
+              "required": true,
+              "default": "L",
+              "options": [
+                "kg",
+                "L",
+                "mL",
+                "m",
+                "board",
+                "roll",
+                "piece"
+              ]
+            }
+          ]
+        },
+        "edge-trim": {
+          "label": "Edge Trim / Profile",
+          "attributes": [
+            {
+              "name": "data-cim-kind",
+              "label": "Kind",
+              "type": "text",
+              "required": true,
+              "default": "material",
+              "disabled": true
+            },
+            {
+              "name": "data-cim-tile-component",
+              "label": "Component",
+              "type": "select",
+              "required": true,
+              "default": "Edge Trim / Profile",
+              "options": [
+                "Surface Primer",
+                "Waterproofing",
+                "Screed / Mortar Bed",
+                "Self-Leveling",
+                "Tile Adhesive",
+                "Grout",
+                "Sealant / Silicone",
+                "Grout Sealer",
+                "Edge Trim / Profile",
+                "Tile Spacers",
+                "Backer Board",
+                "Uncoupling Membrane"
+              ]
+            },
+            {
+              "name": "data-cim-estimating-basis",
+              "label": "Estimating basis",
+              "type": "select",
+              "required": false,
+              "default": "linear_trim",
+              "options": [
+                "coverage",
+                "consumption",
+                "bed_volume",
+                "joint_grout",
+                "linear_sealant",
+                "linear_trim",
+                "piece_count"
+              ]
+            },
+            {
+              "name": "data-cim-url",
+              "label": "Edge Trim / Profile image URL",
+              "type": "image",
+              "required": false
+            },
+            {
+              "name": "data-cim-stick-length",
+              "label": "Stick length (m)",
+              "type": "number",
+              "required": true,
+              "default": "2.5"
+            },
+            {
+              "name": "data-cim-pack-size",
+              "label": "Pack size (sticks per pack)",
+              "type": "number",
+              "required": true,
+              "default": "1"
+            },
+            {
+              "name": "data-cim-pack-unit",
+              "label": "Pack unit",
+              "type": "select",
+              "required": true,
+              "default": "m",
+              "options": [
+                "kg",
+                "L",
+                "mL",
+                "m",
+                "board",
+                "roll",
+                "piece"
+              ]
+            }
+          ]
+        },
+        "tile-spacers": {
+          "label": "Tile Spacers",
+          "attributes": [
+            {
+              "name": "data-cim-kind",
+              "label": "Kind",
+              "type": "text",
+              "required": true,
+              "default": "material",
+              "disabled": true
+            },
+            {
+              "name": "data-cim-tile-component",
+              "label": "Component",
+              "type": "select",
+              "required": true,
+              "default": "Tile Spacers",
+              "options": [
+                "Surface Primer",
+                "Waterproofing",
+                "Screed / Mortar Bed",
+                "Self-Leveling",
+                "Tile Adhesive",
+                "Grout",
+                "Sealant / Silicone",
+                "Grout Sealer",
+                "Edge Trim / Profile",
+                "Tile Spacers",
+                "Backer Board",
+                "Uncoupling Membrane"
+              ]
+            },
+            {
+              "name": "data-cim-estimating-basis",
+              "label": "Estimating basis",
+              "type": "select",
+              "required": false,
+              "default": "piece_count",
+              "options": [
+                "coverage",
+                "consumption",
+                "bed_volume",
+                "joint_grout",
+                "linear_sealant",
+                "linear_trim",
+                "piece_count"
+              ]
+            },
+            {
+              "name": "data-cim-url",
+              "label": "Tile Spacers image URL",
+              "type": "image",
+              "required": false
+            },
+            {
+              "name": "data-cim-pieces-per-m2",
+              "label": "Pieces per m²",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "data-cim-pack-size",
+              "label": "Pack size (pieces per pack)",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "data-cim-pack-unit",
+              "label": "Pack unit",
+              "type": "select",
+              "required": true,
+              "default": "piece",
+              "options": [
+                "kg",
+                "L",
+                "mL",
+                "m",
+                "board",
+                "roll",
+                "piece"
+              ]
+            }
+          ]
+        },
+        "backer-board": {
+          "label": "Backer Board",
+          "attributes": [
+            {
+              "name": "data-cim-kind",
+              "label": "Kind",
+              "type": "text",
+              "required": true,
+              "default": "material",
+              "disabled": true
+            },
+            {
+              "name": "data-cim-tile-component",
+              "label": "Component",
+              "type": "select",
+              "required": true,
+              "default": "Backer Board",
+              "options": [
+                "Surface Primer",
+                "Waterproofing",
+                "Screed / Mortar Bed",
+                "Self-Leveling",
+                "Tile Adhesive",
+                "Grout",
+                "Sealant / Silicone",
+                "Grout Sealer",
+                "Edge Trim / Profile",
+                "Tile Spacers",
+                "Backer Board",
+                "Uncoupling Membrane"
+              ]
+            },
+            {
+              "name": "data-cim-estimating-basis",
+              "label": "Estimating basis",
+              "type": "select",
+              "required": false,
+              "default": "coverage",
+              "options": [
+                "coverage",
+                "consumption",
+                "bed_volume",
+                "joint_grout",
+                "linear_sealant",
+                "linear_trim",
+                "piece_count"
+              ]
+            },
+            {
+              "name": "data-cim-url",
+              "label": "Backer Board image URL",
+              "type": "image",
+              "required": false
+            },
+            {
+              "name": "data-cim-coverage",
+              "label": "Coverage (m² per board)",
+              "type": "number",
+              "required": true,
+              "default": "2.88"
+            },
+            {
+              "name": "data-cim-pack-size",
+              "label": "Pack size (boards per pack)",
+              "type": "number",
+              "required": true,
+              "default": "1"
+            },
+            {
+              "name": "data-cim-pack-unit",
+              "label": "Pack unit",
+              "type": "select",
+              "required": true,
+              "default": "board",
+              "options": [
+                "kg",
+                "L",
+                "mL",
+                "m",
+                "board",
+                "roll",
+                "piece"
+              ]
+            }
+          ]
+        },
+        "uncoupling-membrane": {
+          "label": "Uncoupling Membrane",
+          "attributes": [
+            {
+              "name": "data-cim-kind",
+              "label": "Kind",
+              "type": "text",
+              "required": true,
+              "default": "material",
+              "disabled": true
+            },
+            {
+              "name": "data-cim-tile-component",
+              "label": "Component",
+              "type": "select",
+              "required": true,
+              "default": "Uncoupling Membrane",
+              "options": [
+                "Surface Primer",
+                "Waterproofing",
+                "Screed / Mortar Bed",
+                "Self-Leveling",
+                "Tile Adhesive",
+                "Grout",
+                "Sealant / Silicone",
+                "Grout Sealer",
+                "Edge Trim / Profile",
+                "Tile Spacers",
+                "Backer Board",
+                "Uncoupling Membrane"
+              ]
+            },
+            {
+              "name": "data-cim-estimating-basis",
+              "label": "Estimating basis",
+              "type": "select",
+              "required": false,
+              "default": "coverage",
+              "options": [
+                "coverage",
+                "consumption",
+                "bed_volume",
+                "joint_grout",
+                "linear_sealant",
+                "linear_trim",
+                "piece_count"
+              ]
+            },
+            {
+              "name": "data-cim-url",
+              "label": "Uncoupling Membrane image URL",
+              "type": "image",
+              "required": false
+            },
+            {
+              "name": "data-cim-coverage",
+              "label": "Coverage (m² per roll)",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "data-cim-pack-size",
+              "label": "Pack size (rolls per pack)",
+              "type": "number",
+              "required": true,
+              "default": "1"
+            },
+            {
+              "name": "data-cim-pack-unit",
+              "label": "Pack unit",
+              "type": "select",
+              "required": true,
+              "default": "roll",
+              "options": [
+                "kg",
+                "L",
+                "mL",
+                "m",
+                "board",
+                "roll",
+                "piece"
+              ]
+            }
+          ]
+        },
+        "sealant-silicone": {
+          "label": "Sealant / Silicone",
+          "attributes": [
+            {
+              "name": "data-cim-kind",
+              "label": "Kind",
+              "type": "text",
+              "required": true,
+              "default": "material",
+              "disabled": true
+            },
+            {
+              "name": "data-cim-tile-component",
+              "label": "Component",
+              "type": "select",
+              "required": true,
+              "default": "Sealant / Silicone",
+              "options": [
+                "Surface Primer",
+                "Waterproofing",
+                "Screed / Mortar Bed",
+                "Self-Leveling",
+                "Tile Adhesive",
+                "Grout",
+                "Sealant / Silicone",
+                "Grout Sealer",
+                "Edge Trim / Profile",
+                "Tile Spacers",
+                "Backer Board",
+                "Uncoupling Membrane"
+              ]
+            },
+            {
+              "name": "data-cim-estimating-basis",
+              "label": "Estimating basis",
+              "type": "select",
+              "required": false,
+              "default": "linear_sealant",
+              "options": [
+                "coverage",
+                "consumption",
+                "bed_volume",
+                "joint_grout",
+                "linear_sealant",
+                "linear_trim",
+                "piece_count"
+              ]
+            },
+            {
+              "name": "data-cim-url",
+              "label": "Sealant / Silicone image URL",
+              "type": "image",
+              "required": false
+            },
+            {
+              "name": "data-cim-joint-width",
+              "label": "Joint width (mm)",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "data-cim-joint-depth",
+              "label": "Joint depth (mm)",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "data-cim-pack-size",
+              "label": "Pack size (cartridge mL)",
+              "type": "number",
+              "required": true,
+              "default": "300"
+            },
+            {
+              "name": "data-cim-pack-unit",
+              "label": "Pack unit",
+              "type": "select",
+              "required": true,
+              "default": "mL",
+              "options": [
+                "kg",
+                "L",
+                "mL",
+                "m",
+                "board",
+                "roll",
+                "piece"
+              ]
+            }
+          ]
+        }
+      }
     },
-
-    "tile-adhesive": {
-      "label": "Tile Adhesive",
-      "attributes": [
-        { "name": "data-cim-tile-component", "label": "Component", "type": "text", "required": true, "default": "Tile Adhesive", "disabled": true },
-        { "name": "data-cim-consumption", "label": "Consumption (kg per m²)", "type": "number", "required": true, "default": "4" },
-        { "name": "data-cim-pack-size", "label": "Pack size (in pack unit)", "type": "number", "required": true },
-        { "name": "data-cim-pack-unit", "label": "Pack unit (kg/L/mL/m/board/roll/piece)", "type": "text", "required": true, "default": "kg" }
-      ]
-    },
-
-    "grout": {
-      "label": "Grout",
-      "attributes": [
-        { "name": "data-cim-tile-component", "label": "Component", "type": "text", "required": true, "default": "Grout", "disabled": true },
-        { "name": "data-cim-grout-density", "label": "Grout density (kg per m³)", "type": "number", "required": true, "default": "1600" },
-        { "name": "data-cim-joint-width", "label": "Joint width (mm)", "type": "number", "required": false },
-        { "name": "data-cim-joint-depth", "label": "Joint depth (mm)", "type": "number", "required": false },
-        { "name": "data-cim-pack-size", "label": "Pack size (in pack unit)", "type": "number", "required": true },
-        { "name": "data-cim-pack-unit", "label": "Pack unit", "type": "text", "required": true, "default": "kg" }
-      ]
-    },
-
-    "surface-primer": {
-      "label": "Surface Primer",
-      "attributes": [
-        { "name": "data-cim-tile-component", "label": "Component", "type": "text", "required": true, "default": "Surface Primer", "disabled": true },
-        { "name": "data-cim-coverage", "label": "Coverage (m² per pack unit)", "type": "number", "required": true },
-        { "name": "data-cim-pack-size", "label": "Pack size (in pack unit)", "type": "number", "required": true },
-        { "name": "data-cim-pack-unit", "label": "Pack unit", "type": "text", "required": true, "default": "L" }
-      ]
-    },
-
-    "waterproofing": {
-      "label": "Waterproofing",
-      "attributes": [
-        { "name": "data-cim-tile-component", "label": "Component", "type": "text", "required": true, "default": "Waterproofing", "disabled": true },
-        { "name": "data-cim-estimating-basis", "label": "Estimating basis (coverage/consumption)", "type": "text", "required": false },
-        { "name": "data-cim-coverage", "label": "Coverage (m² per pack unit) — liquid", "type": "number", "required": false },
-        { "name": "data-cim-consumption", "label": "Consumption (per m²) — cementitious", "type": "number", "required": false },
-        { "name": "data-cim-pack-size", "label": "Pack size (in pack unit)", "type": "number", "required": true },
-        { "name": "data-cim-pack-unit", "label": "Pack unit", "type": "text", "required": true, "default": "L" }
-      ]
-    },
-
-    "screed-mortar-bed": {
-      "label": "Screed / Mortar Bed",
-      "attributes": [
-        { "name": "data-cim-tile-component", "label": "Component", "type": "text", "required": true, "default": "Screed / Mortar Bed", "disabled": true },
-        { "name": "data-cim-thickness", "label": "Bed thickness (mm)", "type": "number", "required": true },
-        { "name": "data-cim-mix-cement", "label": "Mix — cement part", "type": "number", "required": true, "default": "1" },
-        { "name": "data-cim-mix-sand", "label": "Mix — sand part", "type": "number", "required": true, "default": "4" },
-        { "name": "data-cim-cement-bag-kg", "label": "Cement bag (kg)", "type": "number", "required": true, "default": "40" },
-        { "name": "data-cim-pack-size", "label": "Pack size (in pack unit)", "type": "number", "required": false },
-        { "name": "data-cim-pack-unit", "label": "Pack unit", "type": "text", "required": false, "default": "kg" }
-      ]
-    },
-
-    "self-leveling": {
-      "label": "Self-Leveling",
-      "attributes": [
-        { "name": "data-cim-tile-component", "label": "Component", "type": "text", "required": true, "default": "Self-Leveling", "disabled": true },
-        { "name": "data-cim-consumption", "label": "Consumption (per m², per mm if set)", "type": "number", "required": true },
-        { "name": "data-cim-consumption-per-mm", "label": "Consumption is per mm (yes/no)", "type": "boolean", "required": true, "default": "yes" },
-        { "name": "data-cim-thickness", "label": "Thickness (mm)", "type": "number", "required": true },
-        { "name": "data-cim-pack-size", "label": "Pack size (in pack unit)", "type": "number", "required": true },
-        { "name": "data-cim-pack-unit", "label": "Pack unit", "type": "text", "required": true, "default": "kg" }
-      ]
-    },
-
-    "grout-sealer": {
-      "label": "Grout Sealer",
-      "attributes": [
-        { "name": "data-cim-tile-component", "label": "Component", "type": "text", "required": true, "default": "Grout Sealer", "disabled": true },
-        { "name": "data-cim-coverage", "label": "Coverage (m² per pack unit)", "type": "number", "required": true },
-        { "name": "data-cim-pack-size", "label": "Pack size (in pack unit)", "type": "number", "required": true },
-        { "name": "data-cim-pack-unit", "label": "Pack unit", "type": "text", "required": true, "default": "L" }
-      ]
-    },
-
-    "edge-trim": {
-      "label": "Edge Trim / Profile",
-      "attributes": [
-        { "name": "data-cim-tile-component", "label": "Component", "type": "text", "required": true, "default": "Edge Trim / Profile", "disabled": true },
-        { "name": "data-cim-stick-length", "label": "Stick length (m)", "type": "number", "required": true, "default": "2.5" },
-        { "name": "data-cim-pack-size", "label": "Pack size (sticks per pack)", "type": "number", "required": true, "default": "1" },
-        { "name": "data-cim-pack-unit", "label": "Pack unit", "type": "text", "required": true, "default": "m" }
-      ]
-    },
-
-    "tile-spacers": {
-      "label": "Tile Spacers",
-      "attributes": [
-        { "name": "data-cim-tile-component", "label": "Component", "type": "text", "required": true, "default": "Tile Spacers", "disabled": true },
-        { "name": "data-cim-pieces-per-m2", "label": "Pieces per m²", "type": "number", "required": true },
-        { "name": "data-cim-pack-size", "label": "Pack size (pieces per pack)", "type": "number", "required": true },
-        { "name": "data-cim-pack-unit", "label": "Pack unit", "type": "text", "required": true, "default": "piece" }
-      ]
-    },
-
-    "backer-board": {
-      "label": "Backer Board",
-      "attributes": [
-        { "name": "data-cim-tile-component", "label": "Component", "type": "text", "required": true, "default": "Backer Board", "disabled": true },
-        { "name": "data-cim-coverage", "label": "Coverage (m² per board)", "type": "number", "required": true, "default": "2.88" },
-        { "name": "data-cim-pack-size", "label": "Pack size (boards per pack)", "type": "number", "required": true, "default": "1" },
-        { "name": "data-cim-pack-unit", "label": "Pack unit", "type": "text", "required": true, "default": "board" }
-      ]
-    },
-
-    "uncoupling-membrane": {
-      "label": "Uncoupling Membrane",
-      "attributes": [
-        { "name": "data-cim-tile-component", "label": "Component", "type": "text", "required": true, "default": "Uncoupling Membrane", "disabled": true },
-        { "name": "data-cim-coverage", "label": "Coverage (m² per roll)", "type": "number", "required": true },
-        { "name": "data-cim-pack-size", "label": "Pack size (rolls per pack)", "type": "number", "required": true, "default": "1" },
-        { "name": "data-cim-pack-unit", "label": "Pack unit", "type": "text", "required": true, "default": "roll" }
-      ]
-    },
-
     "paint": {
       "label": "Paint",
       "attributes": [
-        { "name": "data-cim-kind", "label": "Kind", "type": "text", "required": true, "default": "paint", "disabled": true },
-        { "name": "data-cim-paint-component", "label": "Component", "type": "text", "required": false, "default": "Paint System", "disabled": true },
-        { "name": "data-cim-url", "label": "Paint image URL", "type": "image", "required": false },
-        { "name": "data-cim-color-name", "label": "Color name", "type": "text", "required": false },
-        { "name": "data-cim-color-code", "label": "Color code", "type": "color", "required": false },
-        { "name": "data-cim-finish", "label": "Finish (Gloss/Semi-Gloss/Flat/Satin/Matte)", "type": "text", "required": false },
-        { "name": "data-cim-substrate", "label": "Substrate (Concrete/Dry Wall/Metal/Wood)", "type": "text", "required": false },
-        { "name": "data-cim-application", "label": "Application (Interior/Exterior…)", "type": "text", "required": false },
-        { "name": "data-cim-packaging", "label": "Packaging (display text)", "type": "text", "required": false },
-        { "name": "data-cim-coverage", "label": "Coverage (m² per L)", "type": "number", "required": false },
-        { "name": "data-cim-pack-size", "label": "Pack size (in pack unit)", "type": "number", "required": false },
-        { "name": "data-cim-pack-unit", "label": "Pack unit (L/gal/kg/bag)", "type": "text", "required": false, "default": "L" },
-        { "name": "data-cim-recommended-coats", "label": "Recommended coats", "type": "number", "required": false }
-      ]
+        {
+          "name": "data-cim-paint-component",
+          "label": "Component",
+          "type": "text",
+          "required": true,
+          "default": "Paint System",
+          "disabled": true
+        },
+        {
+          "name": "data-cim-kind",
+          "label": "Kind",
+          "type": "text",
+          "required": true,
+          "default": "paint",
+          "disabled": true
+        },
+        {
+          "name": "data-cim-url",
+          "label": "Paint image URL",
+          "type": "image",
+          "required": false
+        },
+        {
+          "name": "data-cim-color-name",
+          "label": "Color name",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "data-cim-color-code",
+          "label": "Color code",
+          "type": "color",
+          "required": false
+        },
+        {
+          "name": "data-cim-finish",
+          "label": "Finish",
+          "type": "select",
+          "required": false,
+          "options": [
+            "Gloss",
+            "Semi-Gloss",
+            "Flat",
+            "Satin",
+            "Matte"
+          ]
+        },
+        {
+          "name": "data-cim-substrate",
+          "label": "Substrate",
+          "type": "select",
+          "required": false,
+          "options": [
+            "Concrete",
+            "Dry Wall",
+            "Metal",
+            "Wood"
+          ]
+        },
+        {
+          "name": "data-cim-application",
+          "label": "Application",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "data-cim-packaging",
+          "label": "Packaging (display text)",
+          "type": "text",
+          "required": false
+        },
+        {
+          "name": "data-cim-coverage",
+          "label": "Coverage (m² per L)",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "data-cim-pack-size",
+          "label": "Pack size (in pack unit)",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "data-cim-pack-unit",
+          "label": "Pack unit",
+          "type": "select",
+          "required": false,
+          "default": "L",
+          "options": [
+            "L",
+            "gal",
+            "kg",
+            "bag"
+          ]
+        },
+        {
+          "name": "data-cim-recommended-coats",
+          "label": "Recommended coats",
+          "type": "number",
+          "required": false
+        }
+      ],
+      "components": {
+        "paint-primer": {
+          "label": "Primer / Sealer",
+          "attributes": [
+            {
+              "name": "data-cim-kind",
+              "label": "Kind",
+              "type": "text",
+              "required": true,
+              "default": "paint",
+              "disabled": true
+            },
+            {
+              "name": "data-cim-paint-component",
+              "label": "Component",
+              "type": "text",
+              "required": true,
+              "default": "Primer / Sealer",
+              "disabled": true
+            },
+            {
+              "name": "data-cim-url",
+              "label": "Primer / Sealer image URL",
+              "type": "image",
+              "required": false
+            },
+            {
+              "name": "data-cim-coverage",
+              "label": "Coverage (m² per L)",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "data-cim-pack-size",
+              "label": "Pack size (in pack unit)",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "data-cim-pack-unit",
+              "label": "Pack unit",
+              "type": "select",
+              "required": true,
+              "default": "L",
+              "options": [
+                "L",
+                "gal",
+                "kg",
+                "bag"
+              ]
+            }
+          ]
+        },
+        "putty": {
+          "label": "Putty",
+          "attributes": [
+            {
+              "name": "data-cim-kind",
+              "label": "Kind",
+              "type": "text",
+              "required": true,
+              "default": "paint",
+              "disabled": true
+            },
+            {
+              "name": "data-cim-paint-component",
+              "label": "Component",
+              "type": "text",
+              "required": true,
+              "default": "Putty",
+              "disabled": true
+            },
+            {
+              "name": "data-cim-url",
+              "label": "Putty image URL",
+              "type": "image",
+              "required": false
+            },
+            {
+              "name": "data-cim-consumption",
+              "label": "Consumption (per m²)",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "data-cim-pack-size",
+              "label": "Pack size (in pack unit)",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "data-cim-pack-unit",
+              "label": "Pack unit",
+              "type": "select",
+              "required": true,
+              "default": "kg",
+              "options": [
+                "L",
+                "gal",
+                "kg",
+                "bag"
+              ]
+            }
+          ]
+        },
+        "skim-coat": {
+          "label": "Skim Coat",
+          "attributes": [
+            {
+              "name": "data-cim-kind",
+              "label": "Kind",
+              "type": "text",
+              "required": true,
+              "default": "paint",
+              "disabled": true
+            },
+            {
+              "name": "data-cim-paint-component",
+              "label": "Component",
+              "type": "text",
+              "required": true,
+              "default": "Skim Coat",
+              "disabled": true
+            },
+            {
+              "name": "data-cim-url",
+              "label": "Skim Coat image URL",
+              "type": "image",
+              "required": false
+            },
+            {
+              "name": "data-cim-consumption",
+              "label": "Consumption (per m², per mm)",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "data-cim-consumption-per-mm",
+              "label": "Consumption is per mm",
+              "type": "boolean",
+              "required": true,
+              "default": "yes"
+            },
+            {
+              "name": "data-cim-thickness",
+              "label": "Thickness (mm)",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "data-cim-pack-size",
+              "label": "Pack size (in pack unit)",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "data-cim-pack-unit",
+              "label": "Pack unit",
+              "type": "select",
+              "required": true,
+              "default": "kg",
+              "options": [
+                "L",
+                "gal",
+                "kg",
+                "bag"
+              ]
+            }
+          ]
+        },
+        "plaster-rendering": {
+          "label": "Plaster / Rendering",
+          "attributes": [
+            {
+              "name": "data-cim-kind",
+              "label": "Kind",
+              "type": "text",
+              "required": true,
+              "default": "paint",
+              "disabled": true
+            },
+            {
+              "name": "data-cim-paint-component",
+              "label": "Component",
+              "type": "text",
+              "required": true,
+              "default": "Plaster/Rendering",
+              "disabled": true
+            },
+            {
+              "name": "data-cim-url",
+              "label": "Plaster / Rendering image URL",
+              "type": "image",
+              "required": false
+            },
+            {
+              "name": "data-cim-thickness",
+              "label": "Thickness (mm)",
+              "type": "number",
+              "required": true
+            },
+            {
+              "name": "data-cim-mix-cement",
+              "label": "Mix — cement part",
+              "type": "number",
+              "required": true,
+              "default": "1"
+            },
+            {
+              "name": "data-cim-mix-sand",
+              "label": "Mix — sand part",
+              "type": "number",
+              "required": true,
+              "default": "4"
+            },
+            {
+              "name": "data-cim-cement-bag-kg",
+              "label": "Cement bag (kg)",
+              "type": "number",
+              "required": true,
+              "default": "40"
+            }
+          ]
+        }
+      }
     },
-
-    "paint-primer": {
-      "label": "Primer / Sealer (paint)",
-      "attributes": [
-        { "name": "data-cim-paint-component", "label": "Component", "type": "text", "required": true, "default": "Primer / Sealer", "disabled": true },
-        { "name": "data-cim-coverage", "label": "Coverage (m² per L)", "type": "number", "required": true },
-        { "name": "data-cim-pack-size", "label": "Pack size (in pack unit)", "type": "number", "required": true },
-        { "name": "data-cim-pack-unit", "label": "Pack unit", "type": "text", "required": true, "default": "L" }
-      ]
-    },
-
-    "putty": {
-      "label": "Putty",
-      "attributes": [
-        { "name": "data-cim-paint-component", "label": "Component", "type": "text", "required": true, "default": "Putty", "disabled": true },
-        { "name": "data-cim-consumption", "label": "Consumption (per m²)", "type": "number", "required": true },
-        { "name": "data-cim-pack-size", "label": "Pack size (in pack unit)", "type": "number", "required": true },
-        { "name": "data-cim-pack-unit", "label": "Pack unit", "type": "text", "required": true, "default": "kg" }
-      ]
-    },
-
-    "skim-coat": {
-      "label": "Skim Coat",
-      "attributes": [
-        { "name": "data-cim-paint-component", "label": "Component", "type": "text", "required": true, "default": "Skim Coat", "disabled": true },
-        { "name": "data-cim-consumption", "label": "Consumption (per m², per mm)", "type": "number", "required": true },
-        { "name": "data-cim-consumption-per-mm", "label": "Consumption is per mm (yes/no)", "type": "boolean", "required": true, "default": "yes" },
-        { "name": "data-cim-thickness", "label": "Thickness (mm)", "type": "number", "required": true },
-        { "name": "data-cim-pack-size", "label": "Pack size (in pack unit)", "type": "number", "required": true },
-        { "name": "data-cim-pack-unit", "label": "Pack unit", "type": "text", "required": true, "default": "kg" }
-      ]
-    },
-
-    "plaster-rendering": {
-      "label": "Plaster / Rendering",
-      "attributes": [
-        { "name": "data-cim-paint-component", "label": "Component", "type": "text", "required": true, "default": "Plaster/Rendering", "disabled": true },
-        { "name": "data-cim-thickness", "label": "Thickness (mm)", "type": "number", "required": true },
-        { "name": "data-cim-mix-cement", "label": "Mix — cement part", "type": "number", "required": true, "default": "1" },
-        { "name": "data-cim-mix-sand", "label": "Mix — sand part", "type": "number", "required": true, "default": "4" },
-        { "name": "data-cim-cement-bag-kg", "label": "Cement bag (kg)", "type": "number", "required": true, "default": "40" }
-      ]
-    },
-
     "furniture": {
       "label": "Furniture",
       "attributes": [
@@ -240,7 +1480,6 @@
         }
       ]
     },
-
     "cornice": {
       "label": "Cornice",
       "attributes": [

@@ -39,10 +39,14 @@ import {
   resolveRequiredAssignments,
   syncProductAttributes,
   withBrandAttribute,
-  BRAND_ATTR_NAME,
   type AttributeAssignment,
 } from "../lib/attributes";
-import { getRequiredAttributes } from "../lib/requiredAttributes";
+import {
+  getRequiredAttributes,
+  getComponents,
+  hasComponents,
+  componentSlugFromValue,
+} from "../lib/requiredAttributes";
 import { slugify } from "../lib/products";
 import { cancelProductApproval } from "../lib/approvals";
 
@@ -99,6 +103,8 @@ export default function ProductEditPage() {
   const [assignments, setAssignments] = useState<AttributeAssignment[]>([]);
   // Category-required attribute values (slug -> value) and their errors.
   const [reqValues, setReqValues] = useState<Record<string, string>>({});
+  // Chosen component for categories that offer components (Tile/Paint).
+  const [componentSlug, setComponentSlug] = useState("");
   const [reqErrors, setReqErrors] = useState<Record<string, string>>({});
   // Which required-image field the media picker is filling (its slug), or null.
   const [reqPicker, setReqPicker] = useState<string | null>(null);
@@ -160,6 +166,11 @@ export default function ProductEditPage() {
       if (v) bySlug[pa.attribute.slug] = v;
     }
     setReqValues(bySlug);
+    // Re-select the component from the saved component tag, if any.
+    const catSlug = product.category?.slug ?? null;
+    const tagVal =
+      bySlug["data-cim-tile-component"] ?? bySlug["data-cim-paint-component"];
+    setComponentSlug(componentSlugFromValue(catSlug, tagVal));
     setReqErrors({});
     // Only the product-level images are editable here; variation galleries
     // are managed with their variation.
@@ -300,25 +311,36 @@ export default function ProductEditPage() {
   // Category-required attributes for the currently selected category (by slug).
   const categorySlug =
     categories.find((c) => c.id === form.category_id)?.slug ?? null;
-  const requiredAttrs = getRequiredAttributes(categorySlug);
+  const components = getComponents(categorySlug);
+  const needsComponent = hasComponents(categorySlug);
+  const requiredAttrs = getRequiredAttributes(
+    categorySlug,
+    needsComponent ? componentSlug : null
+  );
   // Field values are keyed by the attribute slug so they line up with the
   // product's stored attributes (which we pre-filled by slug on load).
   const reqKey = (name: string) => slugify(name);
 
-  // The config attributes are managed only in the "Required for this category"
-  // card — hide them from the regular Attributes list so they don't appear
-  // twice. The brand attribute (data-cim-brand) is hidden too: it's sourced
-  // from the Brand dropdown and never edited in the attributes UI. Matched by slug.
-  const requiredSlugSet = new Set(requiredAttrs.map((ra) => reqKey(ra.name)));
-  requiredSlugSet.add(reqKey(BRAND_ATTR_NAME));
-  const requiredAttrIdSet = new Set(
-    attributes.filter((a) => requiredSlugSet.has(a.slug)).map((a) => a.id)
+  // A config attribute (any data-cim-* slug — the required-card fields and the
+  // brand) is managed in the "Required for this category" card, so hide it from
+  // the regular Attributes list and strip it on save (which also clears stale
+  // values from a previously selected component/category).
+  //
+  // BUT a data-cim-* attribute that this product uses for variations is a real
+  // buyable Option, not a config spec — it must stay in the Options builder and
+  // survive the save. So "config spec" = data-cim-* AND not used for variations.
+  const isConfigSlug = (slug: string) => slug.startsWith("data-cim-");
+  const variationAttrIds = new Set(
+    assignments.filter((a) => a.used_for_variations).map((a) => a.attribute_id)
   );
-  const builderPool = attributes.filter(
-    (a) => !requiredSlugSet.has(a.slug)
+  const isConfigSpec = (a: { id: string; slug: string }) =>
+    isConfigSlug(a.slug) && !variationAttrIds.has(a.id);
+  const builderPool = attributes.filter((a) => !isConfigSpec(a));
+  const configAttrIdSet = new Set(
+    attributes.filter((a) => isConfigSpec(a)).map((a) => a.id)
   );
   const builderAssignments = assignments.filter(
-    (a) => !requiredAttrIdSet.has(a.attribute_id)
+    (a) => !configAttrIdSet.has(a.attribute_id)
   );
 
   // Brands available for the chosen company (the Brand picker filters by it).
@@ -329,7 +351,9 @@ export default function ProductEditPage() {
   // Step 2 (classification) is complete when company (unless auto-locked),
   // category and brand are all chosen.
   const canContinueClassification =
-    (lockCompany || !!form.company_id) && !!form.category_id && !!form.brand_id;
+    (lockCompany || !!form.company_id) &&
+    !!form.category_id &&
+    !!form.brand_id;
 
   /**
    * The variation-forming attributes, narrowed to the terms this product
@@ -553,17 +577,14 @@ export default function ProductEditPage() {
     }
 
     // Category-required attributes: drop the product's existing assignments for
-    // those config attributes (matched by slug) AND the brand attribute, then
-    // re-resolve fresh so edits (and brand changes) replace, not duplicate.
-    const reqSlugs = new Set(requiredAttrs.map((ra) => reqKey(ra.name)));
-    reqSlugs.add(reqKey(BRAND_ATTR_NAME));
-    const reqAttrIds = new Set(
-      attributes
-        .filter((a) => reqSlugs.has(a.slug))
-        .map((a) => a.id)
-    );
+    // ALL config attributes (any data-cim-* slug) before re-resolving the
+    // current set. Stripping only the *currently selected* required fields
+    // would leave behind stale data-cim-* values from a previously chosen
+    // component or category — they'd survive the save and show up alongside the
+    // new ones. The brand (data-cim-brand) and the current required fields are
+    // re-added fresh below.
     const nonReqAssignments = assignments.filter(
-      (a) => !reqAttrIds.has(a.attribute_id)
+      (a) => !configAttrIdSet.has(a.attribute_id)
     );
 
     // The brand's value comes from the Brand dropdown (never edited in the
@@ -592,11 +613,15 @@ export default function ProductEditPage() {
 
     // Replace the product's attribute assignments with the current set.
     // Simple products never carry variation attributes — force specs.
+    // If a required-field attribute is ALSO used as a variation option (same
+    // data-cim-* slug), the option wins — don't also add it as a spec, or the
+    // product would carry the attribute twice.
+    const keptAttrIds = new Set(nonReqAssignments.map((a) => a.attribute_id));
     const safeAssignments = [
       ...(isVariable
         ? nonReqAssignments
         : nonReqAssignments.map((a) => ({ ...a, used_for_variations: false }))),
-      ...requiredAssignments, // always specs
+      ...requiredAssignments.filter((a) => !keptAttrIds.has(a.attribute_id)),
     ];
     const { error: attrErr } = await syncProductAttributes(
       product.id,
@@ -1013,7 +1038,10 @@ export default function ProductEditPage() {
               </Label>
               <select
                 value={form.category_id}
-                onChange={(e) => set("category_id", e.target.value)}
+                onChange={(e) => {
+                  set("category_id", e.target.value);
+                  setComponentSlug(""); // reset when the category changes
+                }}
                 className={`${inputClass} dark:bg-gray-900`}
               >
                 <option value="">Select a category…</option>
@@ -1024,6 +1052,24 @@ export default function ProductEditPage() {
                 ))}
               </select>
             </div>
+
+            {needsComponent && (
+              <div>
+                <Label>Component (optional)</Label>
+                <select
+                  value={componentSlug}
+                  onChange={(e) => setComponentSlug(e.target.value)}
+                  className={`${inputClass} dark:bg-gray-900`}
+                >
+                  <option value="">None — base fields</option>
+                  {components.map((c) => (
+                    <option key={c.slug} value={c.slug}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div className="flex justify-end pt-2">
               <button
@@ -1315,6 +1361,20 @@ export default function ProductEditPage() {
                           </button>
                         ))}
                       </div>
+                    ) : ra.type === "select" ? (
+                      <select
+                        value={val || ra.default || ""}
+                        disabled={ra.disabled}
+                        onChange={(e) => setVal(e.target.value)}
+                        className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                      >
+                        <option value="">Select…</option>
+                        {(ra.options ?? []).map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
                     ) : (
                       <Input
                         type={ra.type === "number" ? "number" : "text"}
@@ -1334,11 +1394,12 @@ export default function ProductEditPage() {
         )}
 
         {/*
-          Attributes and Variations are sequential steps, so they share one
-          card as tabs rather than competing for attention side by side.
-          A simple product has no variations, so it gets no tab strip.
+          Attributes (Specifications + Options, each its own card) and
+          Variations are sequential steps. A variable product gets a tab strip
+          to switch between them; a simple product has no variations, so it
+          shows the attribute cards directly.
         */}
-        <div className={isVariable ? "rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]" : shell}>
+        <div className="space-y-6">
           {isVariable && (
             <Tabs
               tabs={[
@@ -1350,37 +1411,37 @@ export default function ProductEditPage() {
             />
           )}
 
-          <div className={isVariable ? "p-6" : ""}>
-            {(!isVariable || dataTab === "attributes") && (
-              <AttributeBuilder
-                pool={builderPool}
-                value={builderAssignments}
-                onChange={(next) =>
-                  // Preserve the config/required assignments (managed in the
-                  // required card); the builder only owns the rest.
-                  setAssignments([
-                    ...assignments.filter((a) =>
-                      requiredAttrIdSet.has(a.attribute_id)
-                    ),
-                    ...next,
-                  ])
-                }
-                onPoolChange={reloadAttributes}
-                notify={notify}
-                isVariable={isVariable}
-                productId={product.id}
-              />
-            )}
+          {(!isVariable || dataTab === "attributes") && (
+            <AttributeBuilder
+              pool={builderPool}
+              value={builderAssignments}
+              onChange={(next) =>
+                // Preserve the config assignments (data-cim-*, managed in the
+                // required card); the builder only owns the rest.
+                setAssignments([
+                  ...assignments.filter((a) =>
+                    configAttrIdSet.has(a.attribute_id)
+                  ),
+                  ...next,
+                ])
+              }
+              onPoolChange={reloadAttributes}
+              notify={notify}
+              isVariable={isVariable}
+              productId={product.id}
+            />
+          )}
 
-            {isVariable && dataTab === "variations" && (
+          {isVariable && dataTab === "variations" && (
+            <div className={shell}>
               <VariationBuilder
                 attributes={variationAttributes}
                 value={variations}
                 onChange={setVariations}
                 notify={notify}
               />
-            )}
-          </div>
+            </div>
+          )}
         </div>
         </div>
 

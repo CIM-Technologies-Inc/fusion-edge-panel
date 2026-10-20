@@ -23,7 +23,7 @@ const shell =
 export default function ProductDetail() {
   const { slug } = useParams<{ slug: string }>();
   const { product, loading, error } = useProduct(slug);
-  const { isAdmin } = useAuth();
+  const { isAdmin, can } = useAuth();
   const [selection, setSelection] = useState<Selection>({});
 
   useEffect(() => {
@@ -161,12 +161,19 @@ export default function ProductDetail() {
           </svg>
           Products
         </Link>
-        {isAdmin && (
+        {(isAdmin || can("product", "edit")) && (
           <Link
             to={`/product/${product.slug}/edit`}
+            aria-label="Edit product"
+            title="Edit product"
             className="inline-flex items-center h-10 gap-2 px-4 text-sm font-medium text-white rounded-lg bg-brand-500 hover:bg-brand-600"
           >
-            Edit product
+            {/* pencil */}
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
+            </svg>
+            <span className="hidden sm:inline">Edit</span>
           </Link>
         )}
       </div>

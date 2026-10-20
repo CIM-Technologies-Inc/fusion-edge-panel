@@ -1,6 +1,35 @@
 import { useRef, useState } from "react";
 
-export type MultiSelectOption = { value: string; label: string };
+export type MultiSelectOption = {
+  value: string;
+  label: string;
+  /** Optional color (hex) shown as a swatch dot before the label. */
+  swatch?: string | null;
+  /** Optional image URL shown as a small thumbnail before the label. */
+  thumb?: string | null;
+};
+
+/** The color dot / image thumbnail an option may carry, or nothing. */
+function OptionMark({ option }: { option: MultiSelectOption }) {
+  if (option.thumb) {
+    return (
+      <img
+        src={option.thumb}
+        alt=""
+        className="h-4 w-4 shrink-0 rounded object-cover"
+      />
+    );
+  }
+  if (option.swatch) {
+    return (
+      <span
+        className="h-3.5 w-3.5 shrink-0 rounded-full border border-black/10 dark:border-white/15"
+        style={{ backgroundColor: option.swatch }}
+      />
+    );
+  }
+  return null;
+}
 
 type Props = {
   /** Shown on the trigger when nothing is selected. */
@@ -45,11 +74,17 @@ export default function MultiSelect({
     );
   };
 
+  // When exactly one value is chosen, show it (with its mark) on the trigger;
+  // otherwise show the label or the chosen count.
+  const soleOption =
+    selected.length === 1
+      ? options.find((o) => o.value === selected[0]) ?? null
+      : null;
   const triggerText =
     selected.length === 0
       ? label
-      : selected.length === 1
-      ? options.find((o) => o.value === selected[0])?.label ?? label
+      : soleOption
+      ? soleOption.label
       : `${label}: ${selected.length}`;
 
   return (
@@ -64,7 +99,10 @@ export default function MultiSelect({
             : "border-gray-300 text-gray-700 dark:border-gray-700 dark:text-gray-300"
         } bg-transparent hover:bg-gray-50 dark:hover:bg-white/[0.03] ${className}`}
       >
-        <span className="truncate">{triggerText}</span>
+        <span className="flex min-w-0 items-center gap-1.5">
+          {soleOption && <OptionMark option={soleOption} />}
+          <span className="truncate">{triggerText}</span>
+        </span>
         <svg
           className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
           viewBox="0 0 24 24"
@@ -113,6 +151,7 @@ export default function MultiSelect({
                     onChange={() => toggleValue(o.value)}
                     className="h-4 w-4 rounded accent-brand-500"
                   />
+                  <OptionMark option={o} />
                   <span className="truncate">{o.label}</span>
                 </label>
               ))

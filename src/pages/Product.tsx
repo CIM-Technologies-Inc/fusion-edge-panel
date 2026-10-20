@@ -565,6 +565,13 @@ export default function Product() {
                 options={attr.terms.map((t) => ({
                   value: t.id,
                   label: t.name,
+                  // A term's swatch holds a hex for color attributes and an
+                  // image URL for image attributes — surface the right one so
+                  // the filter shows a color dot / thumbnail, not just text.
+                  swatch:
+                    attr.display_type === "color" ? t.swatch : undefined,
+                  thumb:
+                    attr.display_type === "image" ? t.swatch : undefined,
                 }))}
               />
             ))}
