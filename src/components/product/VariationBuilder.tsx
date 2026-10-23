@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Label from "../form/Label";
 import Input from "../form/input/InputField";
 import MediaPicker from "../media/MediaPicker";
@@ -16,6 +16,18 @@ type Props = {
   value: VariationDraft[];
   onChange: (next: VariationDraft[]) => void;
   notify: (v: "success" | "error" | "info", t: string, m: string) => void;
+  /**
+   * The category's "Required for this category" fields, offered on EVERY
+   * variation as optional per-variation overrides. Left blank, the storefront
+   * falls back to the product-level (initial) field. Carries the field's type
+   * so e.g. a color field renders a color picker here too.
+   */
+  categoryFields?: {
+    name: string;
+    label: string;
+    type?: string;
+    options?: string[];
+  }[];
 };
 
 const btn =
@@ -26,6 +38,7 @@ export default function VariationBuilder({
   value,
   onChange,
   notify,
+  categoryFields = [],
 }: Props) {
   const [pickerRow, setPickerRow] = useState<number | null>(null);
 
@@ -86,6 +99,92 @@ export default function VariationBuilder({
         idx === mi ? { ...x, values: x.values.filter((y) => y !== v) } : x
       )
     );
+
+  // --- Category fields as optional per-variation overrides -----------------
+  // Each category field is stored as a single-value meta entry keyed by its
+  // name. Reading returns the first value; setting replaces it (or removes the
+  // meta entry when cleared, so a blank override is never saved).
+  const categoryFieldValue = (i: number, name: string) =>
+    value[i].meta?.find((m) => m.name === name)?.values[0] ?? "";
+
+  const setCategoryFieldValue = (i: number, name: string, next: string) => {
+    const meta = value[i].meta ?? [];
+    const trimmed = next;
+    const idx = meta.findIndex((m) => m.name === name);
+    if (!trimmed.trim()) {
+      // Cleared → drop the override entirely.
+      if (idx === -1) return;
+      setMeta(i, meta.filter((_, j) => j !== idx));
+      return;
+    }
+    if (idx === -1) {
+      setMeta(i, [...meta, { name, values: [trimmed] }]);
+    } else {
+      setMeta(
+        i,
+        meta.map((m, j) => (j === idx ? { ...m, values: [trimmed] } : m))
+      );
+    }
+  };
+
+  // The free-typed "Extra attributes" exclude any that mirror a category field
+  // (those are shown in the category-fields block above), so they don't double.
+  const categoryFieldNames = new Set(categoryFields.map((f) => f.name));
+
+  // --- Color category fields default from the color OPTION -----------------
+  // A variable product's color is chosen as an Option; the category's color
+  // fields (…-color-hex / -color-code and …-color-name) should mirror it. We
+  // find the color option attribute, then pair the color-type category field
+  // (hex) with its name sibling (same prefix, -name).
+  const colorOption = attributes.find(
+    (a) => a.attribute.display_type === "color"
+  );
+  const hexField = categoryFields.find((f) => f.type === "color");
+  const nameField = hexField
+    ? categoryFields.find(
+        (f) =>
+          f.name === hexField.name.replace(/-(hex|code)$/, "-name") ||
+          f.name === hexField.name.replace(/-color-(hex|code)$/, "-color-name")
+      )
+    : undefined;
+
+  // Seed the color category fields from the chosen color option whenever a
+  // variation has no explicit value yet (first render, or after the option
+  // changes). Writing only when a value is missing avoids clobbering a manual
+  // override and prevents an update loop.
+  useEffect(() => {
+    if (!colorOption || (!hexField && !nameField)) return;
+    let changed = false;
+    const next = value.map((d) => {
+      const def = (() => {
+        const termId = d.terms[colorOption.attribute.id];
+        const term = colorOption.terms.find((t) => t.id === termId);
+        return term ? { hex: term.swatch ?? "", name: term.name ?? "" } : null;
+      })();
+      if (!def) return d;
+      let meta = d.meta ?? [];
+      const seed = (fieldName: string | undefined, val: string) => {
+        if (!fieldName || !val) return;
+        const existing = meta.find((m) => m.name === fieldName)?.values[0] ?? "";
+        if (existing.trim()) return; // keep a manual value
+        meta = [
+          ...meta.filter((m) => m.name !== fieldName),
+          { name: fieldName, values: [val] },
+        ];
+        changed = true;
+      };
+      seed(hexField?.name, def.hex);
+      seed(nameField?.name, def.name);
+      return meta === (d.meta ?? []) ? d : { ...d, meta };
+    });
+    if (changed) onChange(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    value.length,
+    colorOption?.attribute.id,
+    // re-seed if any variation's color term changed
+    value.map((d) => colorOption && d.terms[colorOption.attribute.id]).join(","),
+  ]);
 
   /** Add every combination that isn't already present. */
   const generateAll = () => {
@@ -338,6 +437,88 @@ export default function VariationBuilder({
                 </div>
               </div>
 
+              {/* Category fields — optional per-variation overrides. Left blank,
+                  the storefront uses the product-level (initial) field. */}
+              {categoryFields.length > 0 && (
+                <div className="pt-3 mt-4 border-t border-gray-100 dark:border-gray-800">
+                  <span className="mb-2 block text-theme-xs font-medium text-gray-600 dark:text-gray-300">
+                    Category fields{" "}
+                    <span className="font-normal text-gray-400">
+                      (optional — overrides the product field for this variation)
+                    </span>
+                  </span>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {categoryFields.map((f) => {
+                      const v = categoryFieldValue(i, f.name);
+                      const set = (next: string) =>
+                        setCategoryFieldValue(i, f.name, next);
+                      return (
+                        <div key={f.name}>
+                          <span className="block mb-1 text-theme-xs text-gray-500 dark:text-gray-400">
+                            {f.label}
+                          </span>
+                          {f.type === "color" ? (
+                            <div className="flex gap-2">
+                              <input
+                                type="color"
+                                aria-label={`${f.label} color`}
+                                value={
+                                  /^#[0-9a-fA-F]{6}$/.test(v) ? v : "#000000"
+                                }
+                                onChange={(e) => set(e.target.value)}
+                                className="h-10 w-12 shrink-0 cursor-pointer rounded-lg border border-gray-300 bg-transparent dark:border-gray-700"
+                              />
+                              <Input
+                                value={v}
+                                placeholder="#000000"
+                                onChange={(e) => set(e.target.value)}
+                              />
+                            </div>
+                          ) : f.type === "boolean" ? (
+                            <div className="flex gap-2">
+                              {["yes", "no"].map((opt) => (
+                                <button
+                                  key={opt}
+                                  type="button"
+                                  onClick={() => set(v === opt ? "" : opt)}
+                                  className={`h-10 flex-1 rounded-lg border text-sm font-medium capitalize ${
+                                    v === opt
+                                      ? "border-brand-500 bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400"
+                                      : "border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/[0.03]"
+                                  }`}
+                                >
+                                  {opt}
+                                </button>
+                              ))}
+                            </div>
+                          ) : f.type === "select" ? (
+                            <select
+                              value={v}
+                              onChange={(e) => set(e.target.value)}
+                              className="h-10 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                            >
+                              <option value="">Use the product field</option>
+                              {(f.options ?? []).map((opt) => (
+                                <option key={opt} value={opt}>
+                                  {opt}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <Input
+                              type={f.type === "number" ? "number" : "text"}
+                              value={v}
+                              placeholder="Leave blank to use the product field"
+                              onChange={(e) => set(e.target.value)}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Extra attributes — free-typed name + values, this variation only. */}
               <div className="pt-3 mt-4 border-t border-gray-100 dark:border-gray-800">
                 <div className="flex items-center justify-between mb-2">
@@ -353,7 +534,8 @@ export default function VariationBuilder({
                   </button>
                 </div>
 
-                {(d.meta ?? []).length === 0 ? (
+                {(d.meta ?? []).filter((m) => !categoryFieldNames.has(m.name))
+                  .length === 0 ? (
                   <p className="text-theme-xs text-gray-400">
                     Optional. Add attributes like Material or Application, each
                     with one or more values.
@@ -361,6 +543,8 @@ export default function VariationBuilder({
                 ) : (
                   <div className="space-y-3">
                     {d.meta.map((m, mi) => {
+                      // Category fields are shown in their own block above.
+                      if (categoryFieldNames.has(m.name)) return null;
                       const key = `${i}:${mi}`;
                       return (
                         <div

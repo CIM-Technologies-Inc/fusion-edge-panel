@@ -485,21 +485,11 @@ export default function ProductEditPage() {
       return;
     }
 
-    // Category-required attributes must be filled in.
-    const reqErr: Record<string, string> = {};
-    for (const ra of requiredAttrs) {
-      if (ra.required && !(reqValues[reqKey(ra.name)] ?? ra.default ?? "").trim())
-        reqErr[reqKey(ra.name)] = `${ra.label} is required.`;
-    }
-    setReqErrors(reqErr);
-    if (Object.keys(reqErr).length > 0) {
-      notify(
-        "error",
-        "Required fields missing",
-        "Fill in the required attributes for this category."
-      );
-      return;
-    }
+    // Category "required" attributes are OPTIONAL to fill in — any that are
+    // left blank are simply not written. (The storefront reads whatever is
+    // provided; a variable product also mirrors them into each variation's
+    // extra attributes for optional per-variation overrides.)
+    setReqErrors({});
 
     // An attribute with no values chosen can't be saved (it would be silently
     // dropped), so flag it by name instead of losing it on a "success" save.
@@ -1235,11 +1225,12 @@ export default function ProductEditPage() {
           <div className={`${shell} space-y-4`}>
             <div>
               <h3 className="font-medium text-gray-800 dark:text-white/90">
-                Required for this category
+                Fields for this category
               </h3>
               <p className="text-theme-xs text-gray-400">
-                These fields are required for{" "}
-                {categories.find((c) => c.id === form.category_id)?.name}.
+                Recommended fields for{" "}
+                {categories.find((c) => c.id === form.category_id)?.name}. All
+                optional — fill in what applies.
               </p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -1255,10 +1246,7 @@ export default function ProductEditPage() {
                 };
                 return (
                   <div key={ra.name}>
-                    <Label>
-                      {ra.label}{" "}
-                      {ra.required && <span className="text-error-500">*</span>}
-                    </Label>
+                    <Label>{ra.label}</Label>
                     {ra.type === "color" ? (
                       <div className="flex gap-2">
                         <input
@@ -1439,6 +1427,12 @@ export default function ProductEditPage() {
                 value={variations}
                 onChange={setVariations}
                 notify={notify}
+                categoryFields={requiredAttrs.map((ra) => ({
+                  name: ra.name,
+                  label: ra.label,
+                  type: ra.type,
+                  options: ra.options,
+                }))}
               />
             </div>
           )}

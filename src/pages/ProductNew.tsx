@@ -311,21 +311,8 @@ export default function ProductNew() {
       return;
     }
 
-    // Category-required attributes must be filled in.
-    const reqErr: Record<string, string> = {};
-    for (const ra of requiredAttrs) {
-      if (ra.required && !(reqValues[ra.name] ?? ra.default ?? "").trim())
-        reqErr[ra.name] = `${ra.label} is required.`;
-    }
-    setReqErrors(reqErr);
-    if (Object.keys(reqErr).length > 0) {
-      notify(
-        "error",
-        "Required fields missing",
-        "Fill in the required attributes for this category."
-      );
-      return;
-    }
+    // Category fields are OPTIONAL — any left blank are simply not written.
+    setReqErrors({});
 
     // An attribute with no values would be silently dropped on save — block it.
     const emptyAttr = assignments.find((a) => a.term_ids.length === 0);
@@ -837,11 +824,12 @@ export default function ProductNew() {
           <div className={`${shell} space-y-4`}>
             <div>
               <h3 className="font-medium text-gray-800 dark:text-white/90">
-                Required for this category
+                Fields for this category
               </h3>
               <p className="text-theme-xs text-gray-400">
-                These fields are required for{" "}
-                {categories.find((c) => c.id === categoryId)?.name}.
+                Recommended fields for{" "}
+                {categories.find((c) => c.id === categoryId)?.name}. All optional
+                — fill in what applies.
               </p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -856,10 +844,7 @@ export default function ProductNew() {
                 };
                 return (
                   <div key={ra.name}>
-                    <Label>
-                      {ra.label}{" "}
-                      {ra.required && <span className="text-error-500">*</span>}
-                    </Label>
+                    <Label>{ra.label}</Label>
                     {ra.type === "color" ? (
                       <div className="flex gap-2">
                         <input
