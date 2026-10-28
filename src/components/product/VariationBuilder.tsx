@@ -27,6 +27,11 @@ type Props = {
     label: string;
     type?: string;
     options?: string[];
+    default?: string;
+    /** Locked (not per-variation editable) — e.g. kind / component tag. */
+    disabled?: boolean;
+    /** The value a locked field shows (product value or config default). */
+    lockedValue?: string;
   }[];
 };
 
@@ -41,6 +46,16 @@ export default function VariationBuilder({
   categoryFields = [],
 }: Props) {
   const [pickerRow, setPickerRow] = useState<number | null>(null);
+  // Which variation rows are expanded (by index). Collapsed by default so a
+  // long list stays scannable — a row shows just its label (e.g. "Blue / 1L").
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const toggleExpanded = (i: number) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
 
   const termName = (attributeId: string, termId: string) => {
     const attr = attributes.find((a) => a.attribute.id === attributeId);
@@ -231,6 +246,7 @@ export default function VariationBuilder({
     for (const a of attributes) {
       if (a.terms[0]) terms[a.attribute.id] = a.terms[0].id;
     }
+    const newIndex = value.length;
     onChange([
       ...value,
       {
@@ -246,6 +262,8 @@ export default function VariationBuilder({
         meta: [],
       },
     ]);
+    // Open the one just added so it's ready to fill in.
+    setExpanded((prev) => new Set(prev).add(newIndex));
   };
 
   if (attributes.length === 0) {
@@ -282,7 +300,22 @@ export default function VariationBuilder({
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
         <Label>Variations</Label>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {value.length > 1 && (
+            <button
+              type="button"
+              onClick={() =>
+                setExpanded((prev) =>
+                  prev.size === value.length
+                    ? new Set()
+                    : new Set(value.map((_, i) => i))
+                )
+              }
+              className={btn}
+            >
+              {expanded.size === value.length ? "Collapse all" : "Expand all"}
+            </button>
+          )}
           <button type="button" onClick={generateAll} className={btn}>
             Generate all combinations
           </button>
@@ -310,24 +343,57 @@ export default function VariationBuilder({
         </div>
       ) : (
         <div className="space-y-3">
-          {value.map((d, i) => (
+          {value.map((d, i) => {
+            const isOpen = expanded.has(i);
+            return (
             <div
               key={i}
-              className="p-4 border border-gray-200 rounded-lg dark:border-gray-800"
+              className="border border-gray-200 rounded-lg dark:border-gray-800"
             >
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                <span className="font-medium text-gray-800 dark:text-white/90">
-                  {label(d.terms) || "New variation"}
-                </span>
+              {/* Header — click to expand/collapse. Collapsed shows just the
+                  label plus a price/qty summary. */}
+              <div className="flex items-center gap-2 p-3">
+                <button
+                  type="button"
+                  onClick={() => toggleExpanded(i)}
+                  aria-expanded={isOpen}
+                  className="flex flex-1 items-center gap-2 min-w-0 text-left"
+                >
+                  <svg
+                    className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${
+                      isOpen ? "rotate-90" : ""
+                    }`}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                  <span className="truncate font-medium text-gray-800 dark:text-white/90">
+                    {label(d.terms) || "New variation"}
+                  </span>
+                  {!isOpen && (
+                    <span className="truncate text-theme-xs text-gray-400">
+                      {d.sku ? `· ${d.sku} ` : ""}
+                      {d.price ? `· ₱${d.price}` : "· no price"} · qty{" "}
+                      {d.quantity || "0"}
+                    </span>
+                  )}
+                </button>
                 <button
                   type="button"
                   onClick={() => remove(i)}
-                  className="text-sm text-gray-400 hover:text-error-500"
+                  className="shrink-0 text-sm text-gray-400 hover:text-error-500"
                 >
                   Remove
                 </button>
               </div>
 
+              {isOpen && (
+              <div className="px-4 pb-4">
               {/* Which term of each attribute this variation is. */}
               <div className="grid gap-3 mb-3 sm:grid-cols-2">
                 {attributes.map((a) => (
@@ -457,7 +523,15 @@ export default function VariationBuilder({
                           <span className="block mb-1 text-theme-xs text-gray-500 dark:text-gray-400">
                             {f.label}
                           </span>
-                          {f.type === "color" ? (
+                          {f.disabled ? (
+                            // Locked (kind / component tag): same for every
+                            // variation — show the value, read-only.
+                            <Input
+                              value={f.lockedValue ?? f.default ?? ""}
+                              disabled
+                              onChange={() => {}}
+                            />
+                          ) : f.type === "color" ? (
                             <div className="flex gap-2">
                               <input
                                 type="color"
@@ -623,8 +697,11 @@ export default function VariationBuilder({
                   </div>
                 )}
               </div>
+              </div>
+              )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

@@ -363,6 +363,22 @@ export default function ProductEditPage() {
     .filter((a) => a.used_for_variations)
     .map((a) => {
       const pool = attributes.find((p) => p.id === a.attribute_id);
+      const poolTerms = pool?.terms ?? [];
+      // Map every selected term id to its term object. A value just added in
+      // the Options card updates term_ids immediately, but the attribute pool
+      // reloads asynchronously — so for a brief moment a selected id has no
+      // pool term yet. Fall back to a minimal placeholder so the variation
+      // attribute never looks "empty" (which previously needed a refresh).
+      const terms = a.term_ids.map(
+        (id) =>
+          poolTerms.find((t) => t.id === id) ?? {
+            id,
+            name: "…",
+            slug: "",
+            swatch: null,
+            position: 0,
+          }
+      );
       return {
         id: a.attribute_id,
         used_for_variations: true,
@@ -374,7 +390,7 @@ export default function ProductEditPage() {
           display_type: "select" as const,
           position: 0,
         },
-        terms: (pool?.terms ?? []).filter((t) => a.term_ids.includes(t.id)),
+        terms,
       };
     });
 
@@ -481,7 +497,34 @@ export default function ProductEditPage() {
     });
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) {
-      notify("error", "Check the form", "Some fields need attention.");
+      // The classification fields (company/brand/category) live in step 2,
+      // which is collapsed on the main form — so their error is invisible here.
+      // Name the fields, and jump back to step 2 when one of those is missing.
+      const labels: Record<string, string> = {
+        name: "Name",
+        slug: "Slug",
+        sku: "SKU",
+        price: "Price",
+        sale_price: "Sale price",
+        category: "Category",
+        company: "Company",
+        brand: "Brand",
+        images: "Images",
+      };
+      const missing = Object.keys(errors)
+        .map((k) => labels[k] ?? k)
+        .join(", ");
+      const stepTwoFields = ["category", "company", "brand"];
+      const needsStepTwo = Object.keys(errors).some((k) =>
+        stepTwoFields.includes(k)
+      );
+      if (needsStepTwo) setStep(2);
+      notify(
+        "error",
+        "Check the form",
+        `Please fill in: ${missing}.` +
+          (needsStepTwo ? " Opened the Details step." : "")
+      );
       return;
     }
 
@@ -1432,6 +1475,13 @@ export default function ProductEditPage() {
                   label: ra.label,
                   type: ra.type,
                   options: ra.options,
+                  default: ra.default,
+                  disabled: ra.disabled,
+                  // The locked fields (kind / component tag) take their value
+                  // from the product's own required-field value, falling back
+                  // to the config default.
+                  lockedValue:
+                    reqValues[reqKey(ra.name)] ?? ra.default ?? "",
                 }))}
               />
             </div>
