@@ -56,6 +56,16 @@ export default function VariationBuilder({
       else next.add(i);
       return next;
     });
+  // Which variations have their "Category fields" sub-section open. Collapsed
+  // by default — most variations leave these blank (they inherit the product).
+  const [catOpen, setCatOpen] = useState<Set<number>>(new Set());
+  const toggleCatOpen = (i: number) =>
+    setCatOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
 
   const termName = (attributeId: string, termId: string) => {
     const attr = attributes.find((a) => a.attribute.id === attributeId);
@@ -240,18 +250,36 @@ export default function VariationBuilder({
     );
   };
 
-  /** A single blank variation, defaulting to each attribute's first term. */
+  /**
+   * Add a single variation, seeded with the first combination that isn't used
+   * yet (so it's never a duplicate). Blocked once every combination exists.
+   */
   const addOne = () => {
-    const terms: Record<string, string> = {};
-    for (const a of attributes) {
-      if (a.terms[0]) terms[a.attribute.id] = a.terms[0].id;
+    const combos = allCombinations(attributes);
+    if (combos.length === 0) {
+      notify(
+        "error",
+        "Nothing to add",
+        "Give each variation attribute at least one value first."
+      );
+      return;
+    }
+    const existing = new Set(value.map((d) => comboKey(d.terms)));
+    const nextCombo = combos.find((c) => !existing.has(comboKey(c)));
+    if (!nextCombo) {
+      notify(
+        "info",
+        "All combinations added",
+        "Every combination already exists. Remove one to add a different one."
+      );
+      return;
     }
     const newIndex = value.length;
     onChange([
       ...value,
       {
         id: null,
-        terms,
+        terms: nextCombo,
         price: "",
         sale_price: "",
         sku: "",
@@ -294,7 +322,12 @@ export default function VariationBuilder({
     );
   }
 
-  const possible = allCombinations(attributes).length;
+  const combos = allCombinations(attributes);
+  const possible = combos.length;
+  // Every possible combination is already present → nothing new to add/generate.
+  const existingKeys = new Set(value.map((d) => comboKey(d.terms)));
+  const allUsed =
+    possible > 0 && combos.every((c) => existingKeys.has(comboKey(c)));
 
   return (
     <div>
@@ -316,10 +349,22 @@ export default function VariationBuilder({
               {expanded.size === value.length ? "Collapse all" : "Expand all"}
             </button>
           )}
-          <button type="button" onClick={generateAll} className={btn}>
+          <button
+            type="button"
+            onClick={generateAll}
+            disabled={allUsed}
+            title={allUsed ? "All combinations already added" : undefined}
+            className={`${btn} disabled:cursor-not-allowed disabled:opacity-40`}
+          >
             Generate all combinations
           </button>
-          <button type="button" onClick={addOne} className={btn}>
+          <button
+            type="button"
+            onClick={addOne}
+            disabled={allUsed}
+            title={allUsed ? "All combinations already added" : undefined}
+            className={`${btn} disabled:cursor-not-allowed disabled:opacity-40`}
+          >
             + Add variation
           </button>
         </div>
@@ -507,12 +552,31 @@ export default function VariationBuilder({
                   the storefront uses the product-level (initial) field. */}
               {categoryFields.length > 0 && (
                 <div className="pt-3 mt-4 border-t border-gray-100 dark:border-gray-800">
-                  <span className="mb-2 block text-theme-xs font-medium text-gray-600 dark:text-gray-300">
+                  <button
+                    type="button"
+                    onClick={() => toggleCatOpen(i)}
+                    aria-expanded={catOpen.has(i)}
+                    className="mb-2 flex w-full items-center gap-1.5 text-left text-theme-xs font-medium text-gray-600 dark:text-gray-300"
+                  >
+                    <svg
+                      className={`h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform ${
+                        catOpen.has(i) ? "rotate-90" : ""
+                      }`}
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="m9 18 6-6-6-6" />
+                    </svg>
                     Category fields{" "}
                     <span className="font-normal text-gray-400">
-                      (optional — overrides the product field for this variation)
+                      (optional — overrides the product field)
                     </span>
-                  </span>
+                  </button>
+                  {catOpen.has(i) && (
                   <div className="grid gap-3 sm:grid-cols-2">
                     {categoryFields.map((f) => {
                       const v = categoryFieldValue(i, f.name);
@@ -590,10 +654,13 @@ export default function VariationBuilder({
                       );
                     })}
                   </div>
+                  )}
                 </div>
               )}
 
-              {/* Extra attributes — free-typed name + values, this variation only. */}
+              {/* Extra attributes — Name / Values rows, styled like the
+                  product's Specifications editor. Free-typed, this variation
+                  only. */}
               <div className="pt-3 mt-4 border-t border-gray-100 dark:border-gray-800">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-theme-xs font-medium text-gray-600 dark:text-gray-300">
@@ -604,7 +671,7 @@ export default function VariationBuilder({
                     onClick={() => addMetaAttr(i)}
                     className="text-sm font-medium text-brand-500 hover:text-brand-600"
                   >
-                    + Add attribute
+                    + Add row
                   </button>
                 </div>
 
@@ -623,74 +690,93 @@ export default function VariationBuilder({
                       return (
                         <div
                           key={mi}
-                          className="p-3 border border-gray-200 rounded-lg dark:border-gray-700"
+                          className="flex flex-col gap-2 sm:flex-row sm:items-start"
                         >
-                          <div className="flex gap-2">
+                          {/* Name */}
+                          <div className="w-full sm:w-2/5 sm:shrink-0">
                             <Input
                               value={m.name}
-                              placeholder="Attribute name (e.g. Material)"
+                              placeholder="Name (e.g. Material)"
                               onChange={(e) =>
                                 renameMetaAttr(i, mi, e.target.value)
                               }
                             />
-                            <button
-                              type="button"
-                              onClick={() => removeMetaAttr(i, mi)}
-                              aria-label="Remove attribute"
-                              className="h-10 shrink-0 rounded-lg border border-gray-300 px-3 text-sm text-gray-500 hover:border-error-500 hover:text-error-500 dark:border-gray-700 dark:text-gray-400"
-                            >
-                              ×
-                            </button>
                           </div>
 
-                          {/* Value chips */}
-                          {m.values.length > 0 && (
-                            <div className="flex flex-wrap gap-2 mt-2">
+                          {/* Values — chip box (chips + inline add), like Specs. */}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex min-h-11 flex-wrap items-center gap-2 rounded-lg border border-gray-300 bg-transparent px-2 py-1.5 focus-within:border-brand-300 focus-within:ring-3 focus-within:ring-brand-500/10 dark:border-gray-700">
                               {m.values.map((v) => (
                                 <span
                                   key={v}
-                                  className="inline-flex items-center h-7 gap-1.5 rounded-full border border-gray-300 pl-3 pr-1.5 text-sm text-gray-700 dark:border-gray-700 dark:text-gray-300"
+                                  className="inline-flex h-7 items-center gap-1.5 rounded-full bg-brand-50 pl-2.5 pr-1.5 text-sm font-medium text-brand-600 dark:bg-brand-500/15 dark:text-brand-400"
                                 >
-                                  {v}
+                                  <span className="max-w-[160px] truncate">
+                                    {v}
+                                  </span>
                                   <button
                                     type="button"
                                     onClick={() => removeMetaValue(i, mi, v)}
                                     aria-label={`Remove ${v}`}
-                                    className="flex items-center justify-center w-4 h-4 text-gray-400 rounded-full hover:text-error-500"
+                                    className="flex h-4 w-4 items-center justify-center rounded-full text-brand-500/70 hover:bg-brand-500/20 hover:text-brand-600"
                                   >
-                                    ×
+                                    <svg
+                                      className="h-3 w-3"
+                                      viewBox="0 0 24 24"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth="2.5"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                    >
+                                      <path d="M18 6 6 18M6 6l12 12" />
+                                    </svg>
                                   </button>
                                 </span>
                               ))}
-                            </div>
-                          )}
-
-                          {/* Add a value */}
-                          <div className="flex gap-2 mt-2">
-                            <Input
-                              value={valueDraft[key] ?? ""}
-                              placeholder="Add a value (e.g. Oak), press Add"
-                              onChange={(e) =>
-                                setValueDraft((dd) => ({
-                                  ...dd,
-                                  [key]: e.target.value,
-                                }))
-                              }
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  e.preventDefault();
-                                  addMetaValue(i, mi);
+                              <input
+                                value={valueDraft[key] ?? ""}
+                                placeholder={
+                                  m.values.length ? "+ Add value" : "+ Add value…"
                                 }
-                              }}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => addMetaValue(i, mi)}
-                              className={btn}
-                            >
-                              Add
-                            </button>
+                                onChange={(e) =>
+                                  setValueDraft((dd) => ({
+                                    ...dd,
+                                    [key]: e.target.value,
+                                  }))
+                                }
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    addMetaValue(i, mi);
+                                  }
+                                }}
+                                onBlur={() => addMetaValue(i, mi)}
+                                className="h-7 min-w-28 flex-1 bg-transparent text-sm text-gray-800 outline-none placeholder:text-gray-400 dark:text-white/90"
+                              />
+                            </div>
                           </div>
+
+                          {/* Remove row */}
+                          <button
+                            type="button"
+                            onClick={() => removeMetaAttr(i, mi)}
+                            aria-label="Remove row"
+                            title="Remove this attribute"
+                            className="shrink-0 self-start text-gray-400 hover:text-error-500 sm:mt-2.5"
+                          >
+                            <svg
+                              className="h-5 w-5"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M18 6 6 18M6 6l12 12" />
+                            </svg>
+                          </button>
                         </div>
                       );
                     })}

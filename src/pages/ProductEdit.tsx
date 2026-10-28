@@ -359,6 +359,25 @@ export default function ProductEditPage() {
    * The variation-forming attributes, narrowed to the terms this product
    * actually offers — that subset is what the combinations are built from.
    */
+  // Term names/swatches loaded WITH the product (reliable, present on first
+  // render) — used as a fallback for the attribute-pool lookup below, which
+  // reloads asynchronously and is briefly empty on load / after adding a value.
+  const productTermById = new Map<
+    string,
+    { id: string; name: string; slug: string; swatch: string | null; position: number }
+  >();
+  for (const pa of product?.attributes ?? []) {
+    for (const t of pa.terms ?? []) {
+      productTermById.set(t.id, {
+        id: t.id,
+        name: t.name,
+        slug: t.slug ?? "",
+        swatch: t.swatch ?? null,
+        position: t.position ?? 0,
+      });
+    }
+  }
+
   const variationAttributes = assignments
     .filter((a) => a.used_for_variations)
     .map((a) => {
@@ -367,11 +386,12 @@ export default function ProductEditPage() {
       // Map every selected term id to its term object. A value just added in
       // the Options card updates term_ids immediately, but the attribute pool
       // reloads asynchronously — so for a brief moment a selected id has no
-      // pool term yet. Fall back to a minimal placeholder so the variation
-      // attribute never looks "empty" (which previously needed a refresh).
+      // pool term yet. Prefer the pool term, then the product's own loaded
+      // term (reliable on first render), then a last-resort placeholder.
       const terms = a.term_ids.map(
         (id) =>
-          poolTerms.find((t) => t.id === id) ?? {
+          poolTerms.find((t) => t.id === id) ??
+          productTermById.get(id) ?? {
             id,
             name: "…",
             slug: "",
