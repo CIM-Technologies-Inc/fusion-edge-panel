@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   describeChanges,
+  describeSpecChange,
   loadActivity,
   type ActivityEntry,
 } from "../../lib/activity";
@@ -15,6 +16,7 @@ const actionWord: Record<string, string> = {
   insert: "created",
   update: "updated",
   delete: "deleted",
+  attrs: "updated fields on",
 };
 
 const timeAgo = (iso: string) => {
@@ -83,7 +85,8 @@ export default function ActivityLog({
   return (
     <ol className="space-y-4">
       {entries.map((e) => {
-        const rows = describeChanges(e);
+        const rows = e.action === "attrs" ? [] : describeChanges(e);
+        const specRows = e.action === "attrs" ? describeSpecChange(e) : [];
         return (
           <li
             key={e.id}
@@ -113,18 +116,91 @@ export default function ActivityLog({
             </div>
 
             {e.action === "update" && rows.length > 0 && (
-              <ul className="mt-2 space-y-1">
-                {rows.map((r) => (
-                  <li
-                    key={r.field}
-                    className="text-theme-xs text-gray-600 dark:text-gray-300"
-                  >
-                    <span className="text-gray-400">{r.field}:</span>{" "}
-                    <span className="line-through text-gray-400">{r.from}</span>{" "}
-                    → <span className="font-medium">{r.to}</span>
-                  </li>
-                ))}
-              </ul>
+              <div className="mt-2 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
+                <table className="w-full text-theme-xs">
+                  <thead>
+                    <tr className="bg-gray-50 text-left text-gray-400 dark:bg-white/[0.03]">
+                      <th className="px-3 py-1.5 font-medium">Field</th>
+                      <th className="px-3 py-1.5 font-medium">Before</th>
+                      <th className="px-3 py-1.5 font-medium">After</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r) => (
+                      <tr
+                        key={r.field}
+                        className="border-t border-gray-100 dark:border-gray-800"
+                      >
+                        <td className="px-3 py-1.5 font-medium text-gray-700 dark:text-gray-300">
+                          {r.label}
+                        </td>
+                        <td className="px-3 py-1.5 text-gray-400 line-through">
+                          {r.from}
+                        </td>
+                        <td className="px-3 py-1.5 font-medium text-gray-800 dark:text-white/90">
+                          {r.to}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* insert — show the initial values as a simple table too. */}
+            {e.action === "insert" && rows.length > 0 && (
+              <div className="mt-2 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
+                <table className="w-full text-theme-xs">
+                  <tbody>
+                    {rows.map((r) => (
+                      <tr
+                        key={r.field}
+                        className="border-t border-gray-100 first:border-t-0 dark:border-gray-800"
+                      >
+                        <td className="px-3 py-1.5 font-medium text-gray-700 dark:text-gray-300">
+                          {r.label}
+                        </td>
+                        <td className="px-3 py-1.5 text-gray-800 dark:text-white/90">
+                          {r.to}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Field/spec changes — full Before → After per field. */}
+            {e.action === "attrs" && specRows.length > 0 && (
+              <div className="mt-2 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
+                <table className="w-full text-theme-xs">
+                  <thead>
+                    <tr className="bg-gray-50 text-left text-gray-400 dark:bg-white/[0.03]">
+                      <th className="px-3 py-1.5 font-medium">Field</th>
+                      <th className="px-3 py-1.5 font-medium">Before</th>
+                      <th className="px-3 py-1.5 font-medium">After</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {specRows.map((r) => (
+                      <tr
+                        key={r.attribute}
+                        className="border-t border-gray-100 dark:border-gray-800"
+                      >
+                        <td className="px-3 py-1.5 font-medium text-gray-700 dark:text-gray-300">
+                          {r.attribute}
+                        </td>
+                        <td className="px-3 py-1.5 text-gray-400 line-through">
+                          {r.from}
+                        </td>
+                        <td className="px-3 py-1.5 font-medium text-gray-800 dark:text-white/90">
+                          {r.to}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </li>
         );

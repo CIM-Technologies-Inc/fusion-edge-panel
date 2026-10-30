@@ -49,6 +49,7 @@ import {
 } from "../lib/requiredAttributes";
 import { slugify } from "../lib/products";
 import { cancelProductApproval } from "../lib/approvals";
+import { logSpecChanges } from "../lib/activity";
 
 const shell =
   "rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/[0.03]";
@@ -687,6 +688,46 @@ export default function ProductEditPage() {
       navigate(`/product/${edit.slug}`);
       return;
     }
+
+    // Log the Specification + required-field changes (field → value), before vs
+    // after. Includes the data-cim-* required fields (shown with their friendly
+    // label), but NOT the brand (set from the Brand dropdown). Failure here
+    // never blocks the save.
+    const BRAND_SLUG = "data-cim-brand";
+    // Friendly label for a data-cim-* field, from the category config.
+    const labelFor = (slug: string, fallback: string) =>
+      requiredAttrs.find((ra) => slugify(ra.name) === slug)?.label ?? fallback;
+    const isConfig = (slug: string) =>
+      slug.startsWith("data-cim-") && slug !== BRAND_SLUG;
+
+    const before: Record<string, string[]> = {};
+    for (const pa of product.attributes) {
+      if (pa.used_for_variations || pa.attribute.slug === BRAND_SLUG) continue;
+      const key = pa.attribute.slug.startsWith("data-cim-")
+        ? labelFor(pa.attribute.slug, pa.attribute.name)
+        : pa.attribute.name;
+      before[key] = pa.terms.map((t) => t.name);
+    }
+
+    const after: Record<string, string[]> = {};
+    // Required/config fields: take the exact typed values from the form — the
+    // attribute pool hasn't reloaded yet, so a just-created term (e.g. a new
+    // color hex) wouldn't resolve from it.
+    for (const ra of requiredAttrs) {
+      if (!isConfig(slugify(ra.name))) continue;
+      const v = (reqValues[reqKey(ra.name)] ?? ra.default ?? "").trim();
+      after[ra.label] = v ? [v] : [];
+    }
+    // Plain specs (non-config): resolve value names from the pool.
+    for (const a of safeAssignments) {
+      if (a.used_for_variations) continue;
+      const attr = attributes.find((p) => p.id === a.attribute_id);
+      if (!attr || attr.slug === BRAND_SLUG || isConfig(attr.slug)) continue;
+      after[attr.name] = a.term_ids
+        .map((id) => attr.terms.find((t) => t.id === id)?.name)
+        .filter((n): n is string => !!n);
+    }
+    await logSpecChanges(product.id, edit.name, before, after);
 
     // Variations first: deleting them cascades to their images, so this must
     // happen before the product-level image sync writes anything.
